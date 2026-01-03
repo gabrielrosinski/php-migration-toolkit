@@ -117,9 +117,9 @@ npm install -g @anthropic-ai/claude-code
 pip install chardet
 ```
 
-### Install Ralph Wiggum Plugin
+### Install Ralph Wiggum Plugin (For Steps 5 & 6)
 
-Ralph Wiggum is an iterative AI development methodology. Learn more: https://awesomeclaude.ai/ralph-wiggum
+Ralph Wiggum is an iterative AI development methodology used for service migration and validation (steps that require build/test cycles). Learn more: https://awesomeclaude.ai/ralph-wiggum
 
 ```bash
 # In Claude Code:
@@ -145,19 +145,7 @@ claude mcp list
 # Should show: context7
 ```
 
-### Step 1: Create Nx Workspace
-
-```bash
-# Create new Nx workspace with NestJS
-npx create-nx-workspace@latest my-project --preset=nest
-
-cd my-project
-
-# Verify setup
-nx graph
-```
-
-### Step 2: Analyze Your PHP Project
+### Step 1: Analyze Your PHP Project
 
 Basic usage:
 ```bash
@@ -191,12 +179,10 @@ This generates:
 ./scripts/master_migration.sh /path/to/php-project ./output --skip routes
 ```
 
-### Step 3: Design Architecture
+### Step 2: Design Architecture (Single Prompt)
 
 ```bash
-/ralph-loop "$(cat output/prompts/system_design_prompt.md)" \
-  --completion-promise "DESIGN_COMPLETE" \
-  --max-iterations 40
+claude "$(cat prompts/system_design_architect.md)"
 ```
 
 **Output:** `ARCHITECTURE.md` with:
@@ -207,11 +193,50 @@ This generates:
 - Data migration strategy
 - Migration priority order
 
-### Step 4: Setup Nx Structure
-
-Based on the architecture, create apps and libs:
+### Step 3: Generate Migration Reports (Single Prompt)
 
 ```bash
+claude "$(cat prompts/migration_report_generator.md)"
+```
+
+**Output:** Comprehensive documentation in `reports/` folder:
+
+```
+reports/
+├── phase1-analysis/
+│   ├── 01-entities-report.md       # All data entities with relationships
+│   ├── 02-security-report.md       # Security issues + NestJS remediation
+│   ├── 03-endpoints-report.md      # All endpoints with request/response
+│   ├── 04-business-logic-report.md # Business rules and state machines
+│   ├── 05-dependencies-report.md   # External services, file system, includes
+│   ├── 06-configuration-report.md  # Environment variables needed
+│   └── 07-complexity-report.md     # Cyclomatic complexity analysis
+├── phase2-architecture/
+│   ├── 01-system-overview.md       # Technology stack, service catalog
+│   ├── 02-microservices-design.md  # Module structure per service
+│   ├── 03-api-contracts.md         # Full request/response DTOs
+│   ├── 04-data-ownership.md        # Service-to-table mapping
+│   ├── 05-communication-patterns.md # Sync/async patterns
+│   ├── 06-authentication-authorization.md # JWT, guards, RBAC
+│   └── 07-migration-strategy.md    # Phases, rollback plan
+├── flowcharts/                     # Mermaid diagrams
+│   ├── high-level-architecture/
+│   ├── service-communication/
+│   ├── data-flows/
+│   ├── authentication/
+│   └── feature-flows/
+└── INDEX.md                        # Links to all reports
+```
+
+### Step 4: Create Nx Workspace
+
+Based on the architecture, create the Nx workspace and structure:
+
+```bash
+# Create new Nx workspace with NestJS
+npx create-nx-workspace@latest my-project --preset=nest
+cd my-project
+
 # Create additional apps (gateway already exists from preset)
 nx generate @nx/nest:application users-service
 nx generate @nx/nest:application orders-service
@@ -220,9 +245,12 @@ nx generate @nx/nest:application orders-service
 nx generate @nx/nest:library shared-dto
 nx generate @nx/nest:library database
 nx generate @nx/nest:library common
+
+# Verify setup
+nx graph
 ```
 
-### Step 5: Migrate Each Service
+### Step 5: Migrate Each Service (Ralph Wiggum Loop)
 
 ```bash
 # For each service identified in the architecture:
@@ -231,13 +259,17 @@ nx generate @nx/nest:library common
   --max-iterations 60
 ```
 
-### Step 6: Validate
+Uses iterative loop because: write code → test → fix errors → repeat until passing.
+
+### Step 6: Validate (Ralph Wiggum Loop)
 
 ```bash
 /ralph-loop "$(cat prompts/full_validation.md)" \
   --completion-promise "VALIDATION_COMPLETE" \
   --max-iterations 40
 ```
+
+Uses iterative loop because: run tests → fix failures → re-run until all pass.
 
 ### Step 7: Build & Deploy
 
@@ -255,11 +287,11 @@ nx run-many --target=build --all
 ## Workflow Overview
 
 ```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Analyze   │ -> │   Design    │ -> │   Migrate   │ -> │  Validate   │ -> │   Deploy    │
-│  PHP Code   │    │ Architecture│    │  Services   │    │  & Test     │    │             │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-     auto            1 loop          1 loop/service       1 loop/svc       nx affected
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Analyze   │ -> │   Design    │ -> │  Generate   │ -> │   Migrate   │ -> │  Validate   │ -> │   Deploy    │
+│  PHP Code   │    │ Architecture│    │   Reports   │    │  Services   │    │  & Test     │    │             │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+     auto            1 loop            1 loop          1 loop/service       1 loop/svc       nx affected
 ```
 
 See [SYSTEM_FLOW.md](./SYSTEM_FLOW.md) for detailed workflow.
@@ -333,13 +365,17 @@ Options:
 
 ## Prompt Reference
 
-| Prompt | Purpose | Output | Iterations |
-|--------|---------|--------|------------|
-| `system_design_architect.md` | Design Nx monorepo structure | `ARCHITECTURE.md` | 15-30 |
-| `legacy_php_migration.md` | Migrate PHP to Nx app | App code in `apps/` | 10-25 |
-| `generate_service.md` | Create new Nx app | App + tests | 10-20 |
-| `tdd_migration.md` | Test-driven migration | Tests + code | 15-30 |
-| `full_validation.md` | Validate service | Validation report | 10-20 |
+| Prompt | Type | Purpose | Output |
+|--------|------|---------|--------|
+| `system_design_architect.md` | Single | Design Nx monorepo structure | `ARCHITECTURE.md` |
+| `migration_report_generator.md` | Single | Generate comprehensive reports | `reports/` folder |
+| `legacy_php_migration.md` | Loop | Migrate PHP to Nx app | App code in `apps/` |
+| `generate_service.md` | Loop | Create new Nx app | App + tests |
+| `tdd_migration.md` | Loop | Test-driven migration | Tests + code |
+| `full_validation.md` | Loop | Validate service | Validation report |
+
+**Single** = One-shot prompt with `claude "$(cat prompt.md)"`
+**Loop** = Iterative with `/ralph-loop` (for tasks requiring build/test cycles)
 
 ## Nx Commands Reference
 
