@@ -48,7 +48,7 @@ Example:
 
 Reality:
   - Simple tasks: 5-15 iterations
-  - Medium tasks: 15-25 iterations  
+  - Medium tasks: 15-25 iterations
   - Complex tasks: 25-40 iterations
   - Something broken: hits the limit
 ```
@@ -63,12 +63,38 @@ Reality:
 │  STEP 1: ANALYSIS (Automated - No Ralph)                            │
 │  ═══════════════════════════════════════                            │
 │                                                                      │
-│  $ ./scripts/master_migration.sh /php-project ./output              │
+│  $ ./scripts/master_migration.sh /php-project ./output \            │
+│      --sql-file schema.sql --nginx /etc/nginx/mysite                │
 │                                                                      │
-│  Scripts run once and produce:                                       │
-│  ├── legacy_analysis.json  (code structure)                         │
-│  ├── routes.json           (from .htaccess)                         │
-│  └── chunks/               (if large files exist)                   │
+│  Phase 1: PHP Code Analysis                                          │
+│  ├── Functions, classes, includes                                    │
+│  ├── Database operations                                             │
+│  ├── Security vulnerabilities (SQL injection, XSS, etc.)            │
+│  ├── Complexity metrics                                              │
+│  ├── Configuration values                                            │
+│  └── External API calls                                              │
+│                                                                      │
+│  Phase 2: Route Extraction                                           │
+│  ├── .htaccess (Apache mod_rewrite)                                 │
+│  ├── Nginx config (location blocks)                                 │
+│  ├── PHP-based routing (switch/case, routers)                       │
+│  └── Conflict detection                                              │
+│                                                                      │
+│  Phase 3: Database Schema (if --sql-file provided)                  │
+│  ├── TypeORM entities from SQL                                       │
+│  ├── Schema inference from PHP queries                               │
+│  └── Entity generation in output/entities/                           │
+│                                                                      │
+│  Outputs:                                                            │
+│  ├── legacy_analysis.json  (code + security analysis)               │
+│  ├── legacy_analysis.md    (human-readable report)                  │
+│  ├── routes.json           (all extracted routes)                   │
+│  ├── routes_analysis.md    (route documentation)                    │
+│  ├── database_schema.json  (if SQL provided)                        │
+│  ├── entities/             (generated TypeORM entities)             │
+│  └── prompts/system_design_prompt.md (ready to use)                 │
+│                                                                      │
+│  Resume support: ./scripts/master_migration.sh ... --resume         │
 │                                                                      │
 │                              │                                       │
 │                              ▼                                       │
@@ -86,9 +112,12 @@ Reality:
 │      ├── Nx libs structure (shared-dto, database, common)           │
 │      ├── Data ownership per app                                     │
 │      ├── Communication patterns                                     │
+│      ├── Authentication strategy (sessions → JWT)                   │
+│      ├── Global state → DI mapping                                  │
+│      ├── Data migration strategy                                    │
 │      └── Migration priority order                                   │
 │                                                                      │
-│  Typical iterations: 15-25                                          │
+│  Typical iterations: 15-30                                          │
 │                                                                      │
 │                              │                                       │
 │                              ▼                                       │
@@ -111,6 +140,8 @@ Reality:
 │  $ nx generate @nx/nest:library database                            │
 │  $ nx generate @nx/nest:library common                              │
 │                                                                      │
+│  Copy generated entities from output/entities/ to libs/database/    │
+│                                                                      │
 │                              │                                       │
 │                              ▼                                       │
 │                                                                      │
@@ -125,21 +156,49 @@ Reality:
 │  │     --max-iterations 60                                    │    │
 │  │                                                            │    │
 │  │ Claude works until done:                                   │    │
-│  │ - Creates entity in libs/database                          │    │
+│  │ - Creates entity in libs/database (or uses generated)      │    │
 │  │ - Creates DTOs in libs/shared-dto                          │    │
 │  │ - Creates module, service, controller in apps/gateway      │    │
-│  │ - Writes tests                                             │    │
+│  │ - Handles transactions, file uploads, auth                 │    │
+│  │ - Writes tests (>80% coverage)                             │    │
 │  │ - Runs nx test, fixes failures                             │    │
 │  │ - Outputs "SERVICE_COMPLETE" when finished                 │    │
+│  │                                                            │    │
+│  │ Migration patterns handled:                                │    │
+│  │ - mysql_* → TypeORM repository                             │    │
+│  │ - $_GET/$_POST → Validated DTOs                            │    │
+│  │ - $_SESSION → JWT guards                                   │    │
+│  │ - $_FILES → @UploadedFile                                  │    │
+│  │ - die()/exit() → HTTP exceptions                           │    │
+│  │ - global vars → Dependency injection                       │    │
+│  │ - include/require → Module imports                         │    │
 │  │                                                            │    │
 │  │ Typical iterations: 10-25                                  │    │
 │  └────────────────────────────────────────────────────────────┘    │
 │                              │                                       │
 │                              ▼                                       │
+│                                                                      │
+│  STEP 4: VALIDATION (One Loop Per Service)                         │
+│  ══════════════════════════════════════════                        │
+│                                                                      │
 │  ┌────────────────────────────────────────────────────────────┐    │
 │  │ $ /ralph-loop "Validate [service-name]..." \               │    │
 │  │     --completion-promise "VALIDATION_COMPLETE" \           │    │
 │  │     --max-iterations 40                                    │    │
+│  │                                                            │    │
+│  │ Tests performed:                                           │    │
+│  │ - Unit tests (>80% coverage)                               │    │
+│  │ - Integration tests                                        │    │
+│  │ - Security tests:                                          │    │
+│  │   ├── SQL injection prevention                             │    │
+│  │   ├── XSS prevention                                       │    │
+│  │   ├── Authorization enforcement                            │    │
+│  │   └── Path traversal blocking                              │    │
+│  │ - Contract tests (API schema validation)                   │    │
+│  │ - Edge case tests                                          │    │
+│  │ - Performance tests                                        │    │
+│  │                                                            │    │
+│  │ Outputs validation report                                  │    │
 │  │                                                            │    │
 │  │ Typical iterations: 10-20                                  │    │
 │  └────────────────────────────────────────────────────────────┘    │
@@ -149,12 +208,12 @@ Reality:
 │                              │                                       │
 │                              ▼                                       │
 │                                                                      │
-│  STEP 4: BUILD & DEPLOY (Nx + Strangler Fig)                        │
+│  STEP 5: BUILD & DEPLOY (Nx + Strangler Fig)                        │
 │  ═══════════════════════════════════════════                        │
 │                                                                      │
 │  $ nx affected --target=build      # Build only changed apps        │
-│  $ docker build -f apps/gateway/Dockerfile -t gateway:v1 .          │
-│  $ kubectl apply -f k8s/                                            │
+│  $ nx affected --target=test       # Test only changed apps         │
+│  $ nx build gateway                # Build specific app             │
 │                                                                      │
 │  Incrementally route traffic from PHP to NestJS                     │
 │                                                                      │
@@ -192,6 +251,53 @@ Total: 9 Ralph loops
 Total iterations: ~140 (not 9×60=540!)
 ```
 
+## Analysis Phase Details
+
+The analysis phase runs automatically and produces detailed outputs:
+
+### Security Analysis
+
+```
+Security vulnerabilities detected:
+├── SQL Injection         (direct variable interpolation in queries)
+├── XSS                   (unescaped output to HTML)
+├── Path Traversal        (user input in file paths)
+├── Command Injection     (user input in shell commands)
+├── Insecure Functions    (eval, exec, system, etc.)
+└── Weak Crypto           (md5/sha1 for passwords)
+
+Each issue includes:
+- File and line number
+- Severity level
+- Code snippet
+- Recommended fix
+```
+
+### Complexity Analysis
+
+```
+Functions analyzed for cyclomatic complexity:
+├── Low (1-5)      → Simple, straightforward logic
+├── Medium (6-10)  → Moderate branching
+├── High (11-20)   → Complex, consider refactoring
+└── Very High (21+) → Refactor required
+```
+
+### Route Extraction Sources
+
+```
+Routes extracted from:
+├── .htaccess         → Apache mod_rewrite rules
+├── nginx.conf        → Location blocks and rewrites
+├── PHP routing       → switch/case, if-based, router patterns
+└── Direct files      → index.php, admin.php, etc.
+
+Conflict detection:
+- Overlapping patterns identified
+- Priority conflicts flagged
+- Resolution suggestions provided
+```
+
 ## Chunking (Separate from Ralph)
 
 Chunking is preprocessing for large files. It's NOT automatic:
@@ -203,6 +309,30 @@ Chunking is preprocessing for large files. It's NOT automatic:
 # Produces smaller files that fit in Claude's context
 # You then reference chunks in your prompts
 ```
+
+## Resuming Interrupted Migrations
+
+If the analysis phase gets interrupted:
+
+```bash
+# Resume from last completed phase
+./scripts/master_migration.sh /php-project ./output --resume
+
+# Skip specific phases
+./scripts/master_migration.sh /php-project ./output --skip routes
+```
+
+State is saved to `output/.migration_state`
+
+## Troubleshooting
+
+See [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for common issues.
+
+Quick fixes:
+- **Analysis fails**: Check Python dependencies, file permissions
+- **Routes missing**: Verify .htaccess format, add --nginx if using Nginx
+- **Ralph loop stuck**: Check completion promise format, review errors
+- **Build fails**: Run `nx reset`, check tsconfig paths
 
 ## FAQ
 
@@ -217,3 +347,9 @@ A: No. You run one Ralph loop per service, manually.
 
 **Q: Can I run multiple Ralph loops in parallel?**
 A: Yes, using git worktrees for isolation. See Ralph Wiggum docs.
+
+**Q: What if security issues are found?**
+A: They're documented in the analysis output and must be addressed during migration. The migration prompt includes patterns for fixing common vulnerabilities.
+
+**Q: How do I handle the generated TypeORM entities?**
+A: Copy them from `output/entities/` to `libs/database/src/entities/`, review and adjust as needed, then export from the library's index.ts.

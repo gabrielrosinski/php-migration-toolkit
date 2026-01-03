@@ -1,6 +1,6 @@
 # Legacy PHP to NestJS Migration Toolkit
 
-A toolkit for migrating **vanilla PHP applications** (no framework, .htaccess routing, procedural code) to a **NestJS Nx monorepo** using AI-assisted development with Ralph Wiggum loops.
+A comprehensive toolkit for migrating **vanilla PHP applications** (no framework, .htaccess routing, procedural code) to a **NestJS Nx monorepo** using AI-assisted development with Ralph Wiggum loops.
 
 ## Architecture Approach
 
@@ -13,11 +13,9 @@ my-project/
 │   ├── users-service/        # Microservice (if needed)
 │   └── orders-service/       # Microservice (if needed)
 ├── libs/
-│   ├── shared/               # Shared DTOs, interfaces
-│   ├── database/             # Shared TypeORM/Prisma config
+│   ├── shared-dto/           # Shared DTOs, interfaces
+│   ├── database/             # Shared TypeORM config & entities
 │   └── common/               # Shared utilities
-├── k8s/                      # Kubernetes manifests
-├── docker-compose.yml
 ├── nx.json
 └── package.json
 ```
@@ -26,7 +24,7 @@ my-project/
 - One codebase, multiple deployable services
 - Shared code via `libs/` (no copy-paste)
 - `nx affected` - only build/test what changed
-- Each app gets its own Docker image for K8s
+- Each app gets its own Docker image
 - Industry standard for NestJS microservices
 
 ## For Legacy/Vanilla PHP Only
@@ -34,8 +32,9 @@ my-project/
 This toolkit handles:
 - Pure PHP with no framework (NOT Laravel/Symfony)
 - .htaccess-based routing (Apache mod_rewrite)
+- Nginx location-based routing
 - Mixed HTML/PHP files
-- Global variables and superglobals ($_GET, $_POST, $_SESSION)
+- Global variables and superglobals ($_GET, $_POST, $_SESSION, $_FILES)
 - Direct mysql_*/mysqli_* database calls
 
 ## Toolkit Structure
@@ -44,8 +43,9 @@ This toolkit handles:
 migration-toolkit/
 ├── scripts/
 │   ├── master_migration.sh       # Orchestrates analysis phase
-│   ├── extract_legacy_php.py     # Analyzes PHP code structure
-│   ├── extract_routes.py         # Parses .htaccess routes
+│   ├── extract_legacy_php.py     # Analyzes PHP code + security scan
+│   ├── extract_routes.py         # Parses htaccess/nginx/PHP routes
+│   ├── extract_database.py       # Generates TypeORM entities from SQL
 │   └── chunk_legacy_php.sh       # Splits large files
 ├── prompts/
 │   ├── system_design_architect.md      # Architecture design (Nx monorepo)
@@ -54,19 +54,56 @@ migration-toolkit/
 │   ├── generate_service.md             # New service creation
 │   ├── tdd_migration.md                # Test-driven migration
 │   └── full_validation.md              # Testing & validation
+├── docs/
+│   └── TROUBLESHOOTING.md        # Common issues and fixes
 ├── MICROSERVICES_PATTERNS.md     # Curated patterns reference
 ├── SYSTEM_FLOW.md                # How the workflow operates
 └── README.md
 ```
 
+## Features
+
+### Analysis Phase
+- **PHP Code Analysis**: Functions, classes, includes, globals, database operations
+- **Security Scanning**: SQL injection, XSS, path traversal, command injection detection
+- **Complexity Metrics**: Cyclomatic complexity calculation per function
+- **Configuration Extraction**: Detects hardcoded configs for externalization
+- **External API Detection**: Identifies CURL/HTTP calls to external services
+
+### Route Extraction
+- **.htaccess Parsing**: Apache mod_rewrite rules
+- **Nginx Config Parsing**: Location blocks and rewrite rules
+- **PHP Routing Detection**: Switch/case, if-based, and router pattern routing
+- **Conflict Detection**: Identifies overlapping route patterns
+
+### Database Schema
+- **SQL Schema Parsing**: Generates TypeORM entities from CREATE TABLE
+- **Schema Inference**: Infers structure from PHP query patterns
+- **Entity Generation**: Full TypeORM entities with decorators
+
+### Migration Patterns
+- **Database Transactions**: TypeORM queryRunner patterns
+- **File Uploads**: $_FILES to @UploadedFile with validation
+- **Response Standardization**: Consistent API response format
+- **Error Handling**: PHP die()/exit() to NestJS exceptions
+- **Session to JWT**: $_SESSION migration to JWT guards
+- **Global to DI**: Global variables to dependency injection
+
+### Validation & Testing
+- **Unit Testing**: >80% coverage requirement
+- **Security Testing**: Input validation, SQL injection, XSS prevention
+- **Contract Testing**: API response schema validation
+- **Edge Case Testing**: Boundary conditions, unicode, concurrent ops
+- **Performance Testing**: Response time validation
+
 ## Quick Start
 
 ### Prerequisites
 
+- Python 3.7+ (for analysis scripts)
 - Node.js 18+
 - Nx CLI
 - Claude Code CLI
-- Docker (for deployment)
 - Context7 MCP (for documentation lookup)
 
 ```bash
@@ -75,6 +112,9 @@ npm install -g nx
 
 # Install Claude Code
 npm install -g @anthropic-ai/claude-code
+
+# Install Python dependencies
+pip install chardet
 ```
 
 ### Install Ralph Wiggum Plugin
@@ -119,14 +159,37 @@ nx graph
 
 ### Step 2: Analyze Your PHP Project
 
+Basic usage:
 ```bash
 ./scripts/master_migration.sh /path/to/php-project ./output
 ```
 
+With all options:
+```bash
+./scripts/master_migration.sh /path/to/php-project ./output \
+  --sql-file /path/to/schema.sql \
+  --nginx /etc/nginx/sites-available/mysite \
+  --include-direct-files
+```
+
 This generates:
-- `output/legacy_analysis.json` - Code structure analysis
-- `output/routes.json` - Extracted routes from .htaccess
+- `output/legacy_analysis.json` - Code structure + security analysis
+- `output/legacy_analysis.md` - Human-readable report
+- `output/routes.json` - Extracted routes from all sources
+- `output/routes_analysis.md` - Route documentation
+- `output/database_schema.json` - Database schema (if SQL provided)
+- `output/entities/` - Generated TypeORM entities
 - `output/prompts/system_design_prompt.md` - Ready-to-use prompt
+
+**Resuming interrupted analysis:**
+```bash
+./scripts/master_migration.sh /path/to/php-project ./output --resume
+```
+
+**Skipping phases:**
+```bash
+./scripts/master_migration.sh /path/to/php-project ./output --skip routes
+```
 
 ### Step 3: Design Architecture
 
@@ -140,6 +203,8 @@ This generates:
 - Service catalog (which apps to create in Nx)
 - Shared libraries needed
 - Communication patterns
+- Authentication strategy (PHP sessions to JWT)
+- Data migration strategy
 - Migration priority order
 
 ### Step 4: Setup Nx Structure
@@ -166,7 +231,15 @@ nx generate @nx/nest:library common
   --max-iterations 60
 ```
 
-### Step 6: Build & Deploy
+### Step 6: Validate
+
+```bash
+/ralph-loop "$(cat prompts/full_validation.md)" \
+  --completion-promise "VALIDATION_COMPLETE" \
+  --max-iterations 40
+```
+
+### Step 7: Build & Deploy
 
 ```bash
 # Build only affected apps
@@ -177,25 +250,96 @@ nx build users-service
 
 # Build all
 nx run-many --target=build --all
-
-# Docker build (per app)
-docker build -f apps/users-service/Dockerfile -t users-service:v1 .
-
-# Deploy to K8s
-kubectl apply -f k8s/
 ```
 
 ## Workflow Overview
 
 ```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Analyze   │ →  │   Design    │ →  │   Migrate   │ →  │   Deploy    │
-│  PHP Code   │    │ Architecture│    │  Services   │    │   to K8s    │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-     auto            1 loop          1 loop/service      nx affected
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Analyze   │ -> │   Design    │ -> │   Migrate   │ -> │  Validate   │ -> │   Deploy    │
+│  PHP Code   │    │ Architecture│    │  Services   │    │  & Test     │    │             │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+     auto            1 loop          1 loop/service       1 loop/svc       nx affected
 ```
 
 See [SYSTEM_FLOW.md](./SYSTEM_FLOW.md) for detailed workflow.
+
+## Script Reference
+
+### master_migration.sh
+
+Orchestrates the analysis phase.
+
+```bash
+./scripts/master_migration.sh <php_dir> <output_dir> [options]
+
+Options:
+  -r, --resume              Resume from last completed phase
+  -s, --skip <phase>        Skip specific phase (php|routes|database)
+  --sql-file <path>         SQL schema file for entity generation
+  --nginx <path>            Nginx config file for route extraction
+  --include-direct-files    Include direct PHP file access routes
+  --config <path>           Configuration file path
+```
+
+### extract_legacy_php.py
+
+Analyzes PHP codebase for migration.
+
+```bash
+python scripts/extract_legacy_php.py <php_dir> [options]
+
+Options:
+  --output <path>     JSON output file (default: stdout)
+  --format json|md    Output format
+```
+
+**Outputs:**
+- Functions and their complexity scores
+- Classes and methods
+- Includes and dependencies
+- Database operations
+- Security vulnerabilities found
+- Configuration values detected
+- External API calls
+
+### extract_routes.py
+
+Extracts routes from multiple sources.
+
+```bash
+python scripts/extract_routes.py <php_dir> [options]
+
+Options:
+  --output <path>           Output file
+  --format json|nestjs|md   Output format
+  --nginx <path>            Include Nginx config
+  --include-direct-files    Include direct PHP file routes
+```
+
+### extract_database.py
+
+Generates TypeORM entities from SQL or PHP analysis.
+
+```bash
+python scripts/extract_database.py [options]
+
+Options:
+  --sql-file <path>         SQL schema file
+  --php-analysis <path>     PHP analysis JSON file
+  --output-dir <path>       Output directory for entities
+  --format json|entities|md Output format
+```
+
+## Prompt Reference
+
+| Prompt | Purpose | Output | Iterations |
+|--------|---------|--------|------------|
+| `system_design_architect.md` | Design Nx monorepo structure | `ARCHITECTURE.md` | 15-30 |
+| `legacy_php_migration.md` | Migrate PHP to Nx app | App code in `apps/` | 10-25 |
+| `generate_service.md` | Create new Nx app | App + tests | 10-20 |
+| `tdd_migration.md` | Test-driven migration | Tests + code | 15-30 |
+| `full_validation.md` | Validate service | Validation report | 10-20 |
 
 ## Nx Commands Reference
 
@@ -206,18 +350,11 @@ See [SYSTEM_FLOW.md](./SYSTEM_FLOW.md) for detailed workflow.
 | `nx affected --target=test` | Test only changed apps |
 | `nx build <app>` | Build specific app |
 | `nx serve <app>` | Run app in dev mode |
+| `nx test <app> --coverage` | Run tests with coverage |
 | `nx generate @nx/nest:application <name>` | Create new app |
 | `nx generate @nx/nest:library <name>` | Create shared lib |
-
-## Prompt Reference
-
-| Prompt | Purpose | Output |
-|--------|---------|--------|
-| `system_design_architect.md` | Design Nx monorepo structure | `ARCHITECTURE.md` |
-| `legacy_php_migration.md` | Migrate PHP to Nx app | App code in `apps/` |
-| `generate_service.md` | Create new Nx app | App + tests |
-| `tdd_migration.md` | Test-driven migration | Tests + code |
-| `full_validation.md` | Validate service | Validation report |
+| `nx generate @nx/nest:module <name> --project=<app>` | Create module |
+| `nx generate @nx/nest:service <name> --project=<app>` | Create service |
 
 ## Understanding Ralph Wiggum
 
@@ -241,6 +378,16 @@ The prompts automatically query these via Context7 MCP when needed:
 - **NestJS Docs** - Modules, microservices, TypeORM
 - **PHP 5 Manual** - Legacy function behavior
 - **MICROSERVICES_PATTERNS.md** - Architecture patterns (local)
+
+## Troubleshooting
+
+See [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for common issues and solutions.
+
+Quick fixes:
+- **Build errors**: Check tsconfig paths, run `nx reset`
+- **TypeORM errors**: Verify entity imports and module config
+- **Test failures**: Check mock setup and async handling
+- **Ralph loop stuck**: Review completion promise format
 
 ## License
 
