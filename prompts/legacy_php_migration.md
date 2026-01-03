@@ -10,7 +10,37 @@
 # Expected: 10-25 iterations (60 is safety limit for complex cases)
 # ============================================================================
 
-You are a **Senior Backend Engineer** migrating legacy vanilla PHP code to a NestJS microservice.
+You are a **Senior Backend Engineer** migrating legacy vanilla PHP code to a **NestJS module in an Nx monorepo**.
+
+---
+
+## DOCUMENTATION REFERENCE (Context7 MCP) - ON-DEMAND ONLY
+
+Query official docs **only when you encounter uncertainty** during migration.
+
+| Source | Library ID |
+|--------|------------|
+| NestJS Docs | `/nestjs/docs.nestjs.com` |
+| PHP 5 Manual | `/websites/php-legacy-docs_zend-manual-php5-en` |
+
+**Query when:**
+- Unsure how to translate a PHP pattern to NestJS (e.g., session → guards)
+- Need TypeORM syntax for complex queries
+- Encountering unfamiliar PHP function behavior
+- Validating DTO decorators or pipe usage
+
+```
+mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
+```
+
+---
+
+## MICROSERVICES PATTERNS REFERENCE
+
+Consult `MICROSERVICES_PATTERNS.md` when:
+- Implementing Anti-Corruption Layer to isolate from legacy
+- Deciding how new service communicates with existing PHP code
+- Understanding Strangler Fig migration approach
 
 ---
 
@@ -28,7 +58,8 @@ This is legacy PHP with:
 
 ## INPUT DATA
 
-**Service Name:** {{SERVICE_NAME}}
+**App:** {{APP_NAME}} (e.g., gateway)
+**Module:** {{MODULE_NAME}} (e.g., users)
 **Domain:** {{DOMAIN}}
 
 ### Legacy PHP Files
@@ -50,20 +81,32 @@ This is legacy PHP with:
 
 ## YOUR TASK
 
-Create a complete NestJS module:
+Create a complete NestJS module in the Nx monorepo:
+
+**Module Location:** `apps/{{app}}/src/{{module}}/`
+**Shared DTOs:** `libs/shared-dto/src/{{module}}/`
+**Shared Entities:** `libs/database/src/entities/`
 
 ```
-src/{{domain}}/
-├── {{domain}}.module.ts
-├── {{domain}}.controller.ts
-├── {{domain}}.service.ts
-├── dto/
-│   ├── create-{{entity}}.dto.ts
-│   └── update-{{entity}}.dto.ts
-├── entities/
-│   └── {{entity}}.entity.ts
-└── __tests__/
-    └── {{domain}}.service.spec.ts
+apps/{{app}}/src/{{module}}/
+├── {{module}}.module.ts
+├── {{module}}.controller.ts
+├── {{module}}.service.ts
+└── {{module}}.service.spec.ts
+
+libs/shared-dto/src/{{module}}/
+├── create-{{entity}}.dto.ts
+└── update-{{entity}}.dto.ts
+
+libs/database/src/entities/
+└── {{entity}}.entity.ts
+```
+
+**Use Nx generators when possible:**
+```bash
+nx generate @nx/nest:module {{module}} --project={{app}}
+nx generate @nx/nest:controller {{module}} --project={{app}}
+nx generate @nx/nest:service {{module}} --project={{app}}
 ```
 
 ---
@@ -159,13 +202,15 @@ Run: `npm test -- --coverage`
 Before completing, verify:
 
 ```bash
-npm run build          # Must succeed
-npm test -- --coverage # Must show >80%
-npm run lint           # No errors
+nx build {{app}}                    # Must succeed
+nx test {{app}} --coverage          # Must show >80%
+nx lint {{app}}                     # No errors
 ```
 
 Checklist:
-- [ ] Entity matches database table
+- [ ] Entity in `libs/database/src/entities/`
+- [ ] DTOs in `libs/shared-dto/src/{{module}}/`
+- [ ] Module properly imports from `@libs/*`
 - [ ] All DTOs have validation
 - [ ] Service contains all business logic
 - [ ] Controller maps all routes

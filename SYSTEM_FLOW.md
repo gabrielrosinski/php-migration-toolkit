@@ -82,8 +82,9 @@ Reality:
 │                                                                      │
 │  Claude (as Architect) produces:                                     │
 │  └── ARCHITECTURE.md                                                │
-│      ├── Service list (auth, product, order, etc.)                  │
-│      ├── Data ownership per service                                 │
+│      ├── Nx apps structure (gateway + services if needed)           │
+│      ├── Nx libs structure (shared-dto, database, common)           │
+│      ├── Data ownership per app                                     │
 │      ├── Communication patterns                                     │
 │      └── Migration priority order                                   │
 │                                                                      │
@@ -100,20 +101,35 @@ Reality:
 │                              │                                       │
 │                              ▼                                       │
 │                                                                      │
-│  STEP 3: SERVICE MIGRATION (One Loop Per Service)                   │
-│  ════════════════════════════════════════════════                   │
+│  STEP 2.5: SETUP NX STRUCTURE (Manual)                              │
+│  ═════════════════════════════════════                              │
 │                                                                      │
-│  For each service in the architecture:                              │
+│  Based on ARCHITECTURE.md, create Nx apps and libs:                 │
+│                                                                      │
+│  $ npx create-nx-workspace@latest my-project --preset=nest          │
+│  $ nx generate @nx/nest:library shared-dto                          │
+│  $ nx generate @nx/nest:library database                            │
+│  $ nx generate @nx/nest:library common                              │
+│                                                                      │
+│                              │                                       │
+│                              ▼                                       │
+│                                                                      │
+│  STEP 3: MODULE MIGRATION (One Loop Per Module)                     │
+│  ═══════════════════════════════════════════════                    │
+│                                                                      │
+│  For each module in the architecture:                               │
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────┐    │
-│  │ $ /ralph-loop "Migrate [service-name]..." \                │    │
+│  │ $ /ralph-loop "Migrate [module-name]..." \                 │    │
 │  │     --completion-promise "SERVICE_COMPLETE" \              │    │
 │  │     --max-iterations 60                                    │    │
 │  │                                                            │    │
 │  │ Claude works until done:                                   │    │
-│  │ - Creates entity, DTOs, service, controller, module        │    │
+│  │ - Creates entity in libs/database                          │    │
+│  │ - Creates DTOs in libs/shared-dto                          │    │
+│  │ - Creates module, service, controller in apps/gateway      │    │
 │  │ - Writes tests                                             │    │
-│  │ - Runs tests, fixes failures                               │    │
+│  │ - Runs nx test, fixes failures                             │    │
 │  │ - Outputs "SERVICE_COMPLETE" when finished                 │    │
 │  │                                                            │    │
 │  │ Typical iterations: 10-25                                  │    │
@@ -133,28 +149,43 @@ Reality:
 │                              │                                       │
 │                              ▼                                       │
 │                                                                      │
-│  STEP 4: DEPLOY (Human - Strangler Fig Pattern)                     │
-│  ══════════════════════════════════════════════                     │
+│  STEP 4: BUILD & DEPLOY (Nx + Strangler Fig)                        │
+│  ═══════════════════════════════════════════                        │
 │                                                                      │
-│  Incrementally route traffic from PHP to NestJS services            │
+│  $ nx affected --target=build      # Build only changed apps        │
+│  $ docker build -f apps/gateway/Dockerfile -t gateway:v1 .          │
+│  $ kubectl apply -f k8s/                                            │
+│                                                                      │
+│  Incrementally route traffic from PHP to NestJS                     │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Example: 4-Service Project
+## Example: 4-Module Project (Nx Monorepo)
 
 ```
-Project has: auth, product, cart, order
+Project has: auth, product, cart, order (all modules in gateway app)
+
+Nx Structure:
+├── apps/gateway/src/
+│   ├── auth/
+│   ├── product/
+│   ├── cart/
+│   └── order/
+└── libs/
+    ├── shared-dto/
+    ├── database/
+    └── common/
 
 Ralph loops needed:
 ├── 1× System Design          (~20 iterations)
-├── 1× auth-service           (~15 iterations)
+├── 1× auth module            (~15 iterations)
 ├── 1× auth validation        (~12 iterations)
-├── 1× product-service        (~18 iterations)
+├── 1× product module         (~18 iterations)
 ├── 1× product validation     (~12 iterations)
-├── 1× cart-service           (~15 iterations)
+├── 1× cart module            (~15 iterations)
 ├── 1× cart validation        (~10 iterations)
-├── 1× order-service          (~20 iterations)
+├── 1× order module           (~20 iterations)
 └── 1× order validation       (~15 iterations)
 
 Total: 9 Ralph loops

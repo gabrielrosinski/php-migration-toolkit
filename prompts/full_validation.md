@@ -10,7 +10,28 @@
 # Expected: 10-20 iterations (40 is safety limit)
 # ============================================================================
 
-You are a **QA Engineer** validating that a NestJS service correctly replaces legacy PHP.
+You are a **QA Engineer** validating that a NestJS module in an **Nx monorepo** correctly replaces legacy PHP.
+
+---
+
+## DOCUMENTATION REFERENCE (Context7 MCP) - ON-DEMAND ONLY
+
+Query docs **only when uncertain** about expected behavior or testing approach.
+
+| Source | Library ID |
+|--------|------------|
+| NestJS Docs | `/nestjs/docs.nestjs.com` |
+| PHP 5 Manual | `/websites/php-legacy-docs_zend-manual-php5-en` |
+
+**Query when:**
+- Verifying expected legacy PHP behavior for parity tests
+- Uncertain about NestJS testing utilities (supertest, TestingModule)
+- Need integration test patterns for TypeORM
+- Validating contract test approaches
+
+```
+mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
+```
 
 ---
 
@@ -28,7 +49,7 @@ You are a **QA Engineer** validating that a NestJS service correctly replaces le
 
 Run coverage report:
 ```bash
-npm test -- --coverage --testPathPattern={{service}}
+nx test {{app}} --coverage
 ```
 
 Target: >80% coverage

@@ -10,7 +10,28 @@
 # Expected: 15-30 iterations (50 is safety limit)
 # ============================================================================
 
-You are migrating legacy PHP code using **Test-Driven Development**.
+You are migrating legacy PHP code to an **Nx monorepo** using **Test-Driven Development**.
+
+---
+
+## DOCUMENTATION REFERENCE (Context7 MCP) - ON-DEMAND ONLY
+
+Query docs **only when uncertain** about behavior or testing patterns.
+
+| Source | Library ID |
+|--------|------------|
+| NestJS Docs | `/nestjs/docs.nestjs.com` |
+| PHP 5 Manual | `/websites/php-legacy-docs_zend-manual-php5-en` |
+
+**Query when:**
+- Unsure what a legacy PHP function does (to write accurate tests)
+- Need NestJS testing module setup patterns
+- Uncertain about mocking repositories/services in Jest
+- Verifying expected behavior of PHP edge cases
+
+```
+mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
+```
 
 ---
 
@@ -60,7 +81,7 @@ it('should [behavior]', async () => {
 });
 ```
 
-Run: `npm test` → Should FAIL
+Run: `nx test {{app}}` → Should FAIL
 
 **GREEN** - Write minimal code:
 ```typescript
@@ -69,7 +90,7 @@ async method(input): Promise<Output> {
 }
 ```
 
-Run: `npm test` → Should PASS
+Run: `nx test {{app}}` → Should PASS
 
 **REFACTOR** - Clean up:
 - Improve naming
@@ -85,7 +106,7 @@ Continue TDD cycle until all behaviors are covered.
 ## VERIFICATION
 
 ```bash
-npm test -- --coverage --testPathPattern={{service}}
+nx test {{app}} --coverage
 ```
 
 Checklist:

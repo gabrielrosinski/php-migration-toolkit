@@ -14,6 +14,28 @@ You are a **Technical Research Analyst** compiling NestJS microservices best pra
 
 ---
 
+## DOCUMENTATION REFERENCE (Context7 MCP) - ON-DEMAND ONLY
+
+Query official NestJS docs **when researching specific topics**.
+
+| Source | Library ID |
+|--------|------------|
+| NestJS Docs | `/nestjs/docs.nestjs.com` |
+
+**Query when:**
+- Researching specific transport options (TCP, Redis, RabbitMQ, Kafka)
+- Verifying current best practices for guards, interceptors, pipes
+- Getting accurate code examples for patterns
+- Confirming configuration options for modules
+
+**Do NOT bulk-fetch** - query only for the specific section you're currently documenting.
+
+```
+mcp__context7__query-docs(libraryId="/nestjs/docs.nestjs.com", query="<specific topic>")
+```
+
+---
+
 ## YOUR TASK
 
 Research and document best practices for:

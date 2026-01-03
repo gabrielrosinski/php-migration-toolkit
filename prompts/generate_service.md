@@ -1,4 +1,4 @@
-# NestJS Service Generation
+# NestJS Module Generation (Nx Monorepo)
 # ============================================================================
 # RALPH WIGGUM PROMPT
 #
@@ -10,13 +10,43 @@
 # Expected: 10-20 iterations (50 is safety limit)
 # ============================================================================
 
-You are a **Senior NestJS Developer** creating a microservice from a specification.
+You are a **Senior NestJS Developer** creating a module in an **Nx monorepo** from a specification.
+
+---
+
+## DOCUMENTATION REFERENCE (Context7 MCP) - ON-DEMAND ONLY
+
+Query official docs **only when uncertain** about implementation details.
+
+| Source | Library ID |
+|--------|------------|
+| NestJS Docs | `/nestjs/docs.nestjs.com` |
+
+**Query when:**
+- Unsure about decorator syntax (@Injectable, @Controller, etc.)
+- Need correct TypeORM entity/repository patterns
+- Validating DTO class-validator decorators
+- Uncertain about module imports/exports structure
+
+```
+mcp__context7__query-docs(libraryId="/nestjs/docs.nestjs.com", query="<specific question>")
+```
+
+---
+
+## MICROSERVICES PATTERNS REFERENCE
+
+Consult `MICROSERVICES_PATTERNS.md` when:
+- Service needs to communicate with other services (sync vs async)
+- Implementing resilience (Circuit Breaker, Retry, Timeout)
+- Designing event publishing/consuming
 
 ---
 
 ## INPUT DATA
 
-**Service Name:** {{SERVICE_NAME}}
+**App:** {{APP_NAME}} (e.g., gateway)
+**Module:** {{MODULE_NAME}}
 **Domain:** {{DOMAIN}}
 
 ### Responsibilities
@@ -38,22 +68,39 @@ You are a **Senior NestJS Developer** creating a microservice from a specificati
 
 ## YOUR TASK
 
-Create a complete NestJS module with:
+Create a complete NestJS module in the Nx monorepo:
+
+**Step 1: Generate scaffolding with Nx**
+```bash
+nx generate @nx/nest:module {{module}} --project={{app}}
+nx generate @nx/nest:controller {{module}} --project={{app}}
+nx generate @nx/nest:service {{module}} --project={{app}}
+```
+
+**Step 2: Create files in proper locations**
 
 ```
-src/{{domain}}/
-├── {{domain}}.module.ts
-├── {{domain}}.controller.ts
-├── {{domain}}.service.ts
-├── dto/
-│   ├── create-{{entity}}.dto.ts
-│   ├── update-{{entity}}.dto.ts
-│   └── query-{{entity}}.dto.ts
-├── entities/
-│   └── {{entity}}.entity.ts
-└── __tests__/
-    ├── {{domain}}.service.spec.ts
-    └── {{domain}}.controller.spec.ts
+apps/{{app}}/src/{{module}}/
+├── {{module}}.module.ts
+├── {{module}}.controller.ts
+├── {{module}}.controller.spec.ts
+├── {{module}}.service.ts
+└── {{module}}.service.spec.ts
+
+libs/shared-dto/src/{{module}}/
+├── index.ts
+├── create-{{entity}}.dto.ts
+├── update-{{entity}}.dto.ts
+└── query-{{entity}}.dto.ts
+
+libs/database/src/entities/
+└── {{entity}}.entity.ts
+```
+
+**Import from libs:**
+```typescript
+import { CreateEntityDto } from '@libs/shared-dto';
+import { Entity } from '@libs/database';
 ```
 
 ---
@@ -154,23 +201,26 @@ export class DomainModule {}
 
 ### 6. Tests
 
-Write unit tests. Run with: `npm test -- --coverage`
+Write unit tests. Run with: `nx test {{app}}`
 
 ---
 
 ## VERIFICATION
 
 ```bash
-npm run build          # Must succeed
-npm test -- --coverage # Must show >80%
+nx build {{app}}                    # Must succeed
+nx test {{app}} --coverage          # Must show >80%
+nx lint {{app}}                     # No errors
 ```
 
 Checklist:
-- [ ] Entity created
-- [ ] DTOs with validation
+- [ ] Entity in `libs/database/src/entities/`
+- [ ] DTOs in `libs/shared-dto/src/{{module}}/`
+- [ ] Imports use `@libs/*` path aliases
+- [ ] DTOs have validation decorators
 - [ ] Service with CRUD operations
 - [ ] Controller with all endpoints
-- [ ] Module configured
+- [ ] Module configured and imported in app.module.ts
 - [ ] Tests passing
 - [ ] Coverage >80%
 
