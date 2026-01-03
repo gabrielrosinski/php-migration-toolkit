@@ -120,7 +120,7 @@ my-project/
    - Generates comprehensive documentation in `reports/` folder
    - **Phase 1 Reports**: Entities, security issues, endpoints, business logic, dependencies
    - **Phase 2 Reports**: System overview, microservices design, API contracts, data ownership
-   - **Flowcharts**: Mermaid diagrams for architecture, data flows, auth, feature flows
+   - **Flowcharts**: Mermaid diagrams for architecture, data structures/ERD, data flows, auth, feature flows
 
 4. **Create Nx Workspace** (manual):
    ```bash

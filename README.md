@@ -221,6 +221,7 @@ reports/
 │   └── 07-migration-strategy.md    # Phases, rollback plan
 ├── flowcharts/                     # Mermaid diagrams
 │   ├── high-level-architecture/
+│   ├── data-structures/           # ERD diagrams (5-7 entities max per file)
 │   ├── service-communication/
 │   ├── data-flows/
 │   ├── authentication/

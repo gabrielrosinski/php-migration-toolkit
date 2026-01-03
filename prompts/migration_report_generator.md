@@ -47,6 +47,9 @@ reports/
 │   ├── high-level-architecture/
 │   │   ├── system-overview.md
 │   │   └── deployment-topology.md
+│   ├── data-structures/
+│   │   ├── 00-full-erd-overview.md
+│   │   └── [one-file-per-domain].md
 │   ├── service-communication/
 │   │   ├── sync-communication.md
 │   │   ├── async-communication.md
@@ -954,6 +957,89 @@ Create separate .md files in the flowcharts directory. Each file should contain:
 - `system-overview.md` - Complete system architecture diagram
 - `deployment-topology.md` - How services are deployed (containers, K8s)
 
+#### data-structures/
+
+**IMPORTANT: Human Readability Rules**
+- Maximum **5-7 entities per diagram** - split into multiple files if more
+- Group entities by **business domain** (users, orders, products, etc.)
+- Use **clear, descriptive names** - no abbreviations
+- Include **column descriptions** for non-obvious fields
+- Add a **legend** explaining relationship symbols
+
+**Required Files:**
+
+- `00-full-erd-overview.md` - Simplified overview showing ALL entities with just names and primary relationships (no columns). This is the "map" of the entire data model.
+
+- `[domain]-entities.md` - One file per business domain with FULL details:
+  - `users-entities.md` - User, Profile, Role, Permission
+  - `orders-entities.md` - Order, OrderItem, OrderStatus
+  - `products-entities.md` - Product, Category, Inventory
+  - etc.
+
+**ERD Diagram Format:**
+
+```markdown
+# [Domain] Data Structures
+
+## Overview
+[What this domain represents, its purpose in the system]
+
+## Entity Relationship Diagram
+
+\`\`\`mermaid
+erDiagram
+    User ||--o{ Order : "places"
+    User {
+        int id PK "Unique identifier"
+        string email UK "Login email"
+        string password_hash "Bcrypt hashed"
+        datetime created_at "Registration date"
+        boolean is_active "Account status"
+    }
+    Order ||--|{ OrderItem : "contains"
+    Order {
+        int id PK "Unique identifier"
+        int user_id FK "References User"
+        decimal total "Calculated total"
+        enum status "pending|processing|shipped|delivered"
+        datetime created_at "Order placement time"
+    }
+    OrderItem {
+        int id PK "Unique identifier"
+        int order_id FK "References Order"
+        int product_id FK "References Product"
+        int quantity "Number of items"
+        decimal unit_price "Price at time of order"
+    }
+\`\`\`
+
+## Entity Details
+
+### User
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | INT | PK, AUTO_INCREMENT | Unique identifier |
+| email | VARCHAR(255) | UNIQUE, NOT NULL | User login email |
+| ... | ... | ... | ... |
+
+**Business Rules:**
+- Email must be unique across all users
+- Password must be hashed with bcrypt before storage
+- Soft delete via is_active flag (never hard delete)
+
+**Relationships:**
+- Has many Orders (one-to-many)
+- Has one Profile (one-to-one)
+- Belongs to many Roles (many-to-many via user_roles)
+
+### [Next Entity...]
+[Repeat for each entity in this domain]
+
+## Cross-Domain Relationships
+[Document relationships to entities in OTHER domains]
+- Order.product_id → Product (in products-entities.md)
+```
+
 #### service-communication/
 - `sync-communication.md` - HTTP/TCP request flows
 - `async-communication.md` - Event-driven flows
@@ -1009,6 +1095,7 @@ Target Architecture: NestJS Nx Monorepo
 
 ### Flowcharts
 - [High-Level Architecture](flowcharts/high-level-architecture/)
+- [Data Structures & ERD](flowcharts/data-structures/)
 - [Service Communication](flowcharts/service-communication/)
 - [Data Flows](flowcharts/data-flows/)
 - [Authentication](flowcharts/authentication/)
