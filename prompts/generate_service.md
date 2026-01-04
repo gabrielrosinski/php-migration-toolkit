@@ -18,15 +18,17 @@ You are a **Senior NestJS Developer** creating a module in an **Nx monorepo** fr
 
 Query official docs **only when uncertain** about implementation details.
 
-| Source | Library ID |
-|--------|------------|
-| NestJS Docs | `/nestjs/docs.nestjs.com` |
+| Source | Library ID | Use For |
+|--------|------------|---------|
+| NestJS Docs | `/nestjs/docs.nestjs.com` | NestJS patterns, decorators, TypeORM |
+| PHP 5 Manual | `/websites/php-legacy-docs_zend-manual-php5-en` | Understanding legacy PHP behavior (if needed) |
 
 **Query when:**
 - Unsure about decorator syntax (@Injectable, @Controller, etc.)
 - Need correct TypeORM entity/repository patterns
 - Validating DTO class-validator decorators
 - Uncertain about module imports/exports structure
+- Need to understand legacy PHP function behavior from analysis
 
 ```
 mcp__context7__query-docs(libraryId="/nestjs/docs.nestjs.com", query="<specific question>")

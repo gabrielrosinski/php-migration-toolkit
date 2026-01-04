@@ -129,12 +129,7 @@ Ralph Wiggum is an iterative AI development methodology used for service migrati
 
 ### Install Context7 MCP (Required)
 
-**This MCP is required.** The prompts use Context7 to query official documentation on-demand:
-
-| Documentation | Library ID | Used For |
-|---------------|------------|----------|
-| NestJS Docs | `/nestjs/docs.nestjs.com` | Microservices, modules, TypeORM |
-| PHP 5 Manual | `/websites/php-legacy-docs_zend-manual-php5-en` | Understanding legacy PHP |
+**This MCP is required.** The prompts use Context7 to query official documentation on-demand.
 
 ```bash
 claude mcp add context7 -- npx -y @upstash/context7-mcp
@@ -145,6 +140,18 @@ Verify:
 claude mcp list
 # Should show: context7
 ```
+
+### Knowledge Sources by Workflow Phase
+
+| Phase | Knowledge Source | Library ID / Path | Used For |
+|-------|------------------|-------------------|----------|
+| **Step 1: Analyze PHP** | PHP 5 Manual | `/websites/php-legacy-docs_zend-manual-php5-en` | Understanding `mysql_*`, deprecated functions, superglobals |
+| **Step 2: Design Architecture** | NestJS Docs | `/nestjs/docs.nestjs.com` | Best practices for modules, guards, TypeORM |
+| **Step 2: Design Architecture** | Microservices Patterns | `MICROSERVICES_PATTERNS.md` | Service boundaries, Saga, Circuit Breaker |
+| **Step 3: Generate Reports** | All three sources | - | Accurate code examples, security remediation |
+| **Step 4-5: Migrate & Validate** | NestJS Docs | `/nestjs/docs.nestjs.com` | Decorator syntax, testing patterns |
+
+**Important:** Prompts query on-demand only - no bulk documentation fetching to avoid context bloat.
 
 ### Step 1: Analyze Your PHP Project
 
@@ -178,7 +185,10 @@ This generates:
 - `output/analysis/legacy_analysis.md` - Human-readable report
 - `output/analysis/routes.json` - Extracted routes from all sources
 - `output/analysis/routes.md` - Route documentation
-- `output/analysis/architecture_context.json` - Comprehensive LLM-optimized context (~128KB)
+- `output/analysis/architecture_context.json` - Core context (entry points, services, config)
+- `output/analysis/architecture_routes.json` - All routes with handlers
+- `output/analysis/architecture_files.json` - All files with metrics
+- `output/analysis/architecture_security_db.json` - Security issues, database schema
 - `output/database/schema.json` - Database schema (if SQL found/provided)
 - `output/database/entities/` - Generated TypeORM entities
 - `output/prompts/system_design_prompt.md` - Ready-to-use prompt
@@ -204,7 +214,7 @@ This generates:
 
 ### Step 2: Design Architecture (Single Prompt)
 
-The analysis phase automatically generates `architecture_context.json` - a comprehensive (~128KB) context file containing ALL analysis data optimized for LLM consumption.
+The analysis phase automatically generates 4 architecture context files (~113KB total) containing ALL analysis data optimized for LLM consumption.
 
 ```bash
 # Use the auto-generated context with the design prompt
@@ -404,7 +414,7 @@ Options:
 
 ### generate_architecture_context.py
 
-Creates a comprehensive, LLM-optimized context from large analysis files (~128KB).
+Creates LLM-optimized context files from large analysis files.
 
 ```bash
 python scripts/generate_architecture_context.py [options]
@@ -414,18 +424,27 @@ Options:
   -r, --routes <path>       Path to routes.json (optional)
   -d, --database <path>     Path to database schema directory (optional)
   -o, --output <path>       Output path (default: output/analysis/architecture_context.json)
+  -s, --split               Split into 4 files for larger context window (~113KB total)
 ```
 
-**What gets included (ALL data):**
+**Default mode (compact, single file ~70KB):**
+- Ultra-compact string format for routes and files
+- Suitable for limited context windows
+
+**Split mode (--split, 4 files ~113KB total):**
+- `architecture_context.json` - Core (entry points, services, config)
+- `architecture_routes.json` - Full route objects with all metadata
+- `architecture_files.json` - Full file objects with all metrics
+- `architecture_security_db.json` - Security issues, database schema, external APIs
+
+**Data included in both modes:**
 - Project metadata and migration complexity
 - Entry points and recommended services
-- ALL security issues grouped by type (SQL injection, XSS, etc.)
-- ALL routes in compact format with domain grouping
+- ALL security issues grouped by type
+- ALL routes with domain grouping
 - ALL files with complexity metrics
-- ALL database tables with columns and relationships
-- Full dependency graph (who includes whom)
-- External API integrations
-- Global state and singletons
+- ALL database tables with columns
+- Dependency graph, external APIs, global state
 
 ## Prompt Reference
 

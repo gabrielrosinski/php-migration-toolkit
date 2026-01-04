@@ -2,10 +2,10 @@
 """
 Generate Architecture Context
 =============================
-Creates a COMPREHENSIVE, LLM-optimized context from large analysis files.
+Creates a COMPACT, LLM-optimized context from large analysis files.
 
 This script aggregates the full analysis to produce a complete file
-suitable for architecture design prompts (~128KB).
+suitable for architecture design prompts (~70KB, <25K tokens).
 
 Usage:
     python scripts/generate_architecture_context.py \
@@ -98,17 +98,16 @@ def extract_domain_from_path(path: str) -> str:
     return 'core'
 
 
-def summarize_routes(routes_data: Dict) -> Dict:
-    """Comprehensive routes summary - ALL routes in compact format."""
+def summarize_routes(routes_data: Dict, compact: bool = True) -> Dict:
+    """Routes summary - compact or full format."""
     if not routes_data:
-        return {"total": 0, "all_routes": [], "by_domain": {}, "by_method": {}, "conflicts": []}
+        return {"total": 0, "routes": [], "by_method": {}, "domain_counts": {}, "conflicts": []}
 
     routes = routes_data.get('routes', [])
     conflicts = routes_data.get('conflicts', [])
 
-    # ALL routes in compact format
     all_routes = []
-    by_domain = defaultdict(lambda: {"routes": [], "count": 0})
+    domain_counts = defaultdict(int)
     by_method = defaultdict(int)
 
     for route in routes:
@@ -117,43 +116,34 @@ def summarize_routes(routes_data: Dict) -> Dict:
         target = route.get('target', route.get('handler', ''))
         auth = route.get('requires_auth', route.get('auth', None))
 
-        # Extract just filename from target
         handler = os.path.basename(target) if target else 'unknown'
         domain = extract_domain_from_path(target) if target else 'unknown'
 
-        # Compact route format
-        compact_route = {
-            "path": path,
-            "method": method,
-            "handler": handler,
-            "domain": domain
-        }
-        if auth is not None:
-            compact_route["auth"] = auth
+        if compact:
+            # Ultra-compact: "METHOD /path -> handler"
+            route_str = f"{method} {path} -> {handler}"
+            all_routes.append(route_str)
+        else:
+            # Full JSON format for split mode
+            route_obj = {
+                "method": method,
+                "path": path,
+                "handler": handler,
+                "domain": domain
+            }
+            if auth is not None:
+                route_obj["auth"] = auth
+            all_routes.append(route_obj)
 
-        all_routes.append(compact_route)
-
-        # Group by domain
-        by_domain[domain]["routes"].append(f"{method} {path}")
-        by_domain[domain]["count"] += 1
-
-        # Count by method
+        domain_counts[domain] += 1
         by_method[method] += 1
-
-    # Create domain summary
-    domain_summary = {}
-    for domain, data in sorted(by_domain.items(), key=lambda x: x[1]["count"], reverse=True):
-        domain_summary[domain] = {
-            "count": data["count"],
-            "routes": data["routes"]
-        }
 
     return {
         "total": len(routes),
-        "all_routes": all_routes,
-        "by_domain": domain_summary,
+        "routes": all_routes,
         "by_method": dict(by_method),
-        "conflicts": conflicts  # Include all conflicts
+        "domain_counts": dict(sorted(domain_counts.items(), key=lambda x: x[1], reverse=True)),
+        "conflicts": conflicts
     }
 
 
@@ -220,8 +210,8 @@ def summarize_security(analysis: Dict) -> Dict:
     }
 
 
-def summarize_files(analysis: Dict) -> Dict:
-    """Comprehensive file summary - ALL files with metrics."""
+def summarize_files(analysis: Dict, compact: bool = True) -> Dict:
+    """File summary - compact or full format."""
     all_files = analysis.get('all_files', [])
 
     # Handle both list and dict formats
@@ -231,20 +221,11 @@ def summarize_files(analysis: Dict) -> Dict:
         files_list = all_files if all_files else []
 
     if not files_list:
-        # Try to extract from entry_points
         entry_points = analysis.get('entry_points', [])
         files_list = entry_points
 
-    # Extract ALL files with key metrics
-    all_file_metrics = []
-    by_domain = defaultdict(lambda: {
-        "files": [],
-        "total_lines": 0,
-        "total_complexity": 0,
-        "total_functions": 0,
-        "files_with_db": 0,
-        "security_issues": 0
-    })
+    result_files = []
+    domain_stats = defaultdict(lambda: {"count": 0, "lines": 0, "complexity": 0, "db": 0, "security": 0})
 
     for data in files_list:
         path = data.get('path', '')
@@ -260,47 +241,35 @@ def summarize_files(analysis: Dict) -> Dict:
         includes = data.get('includes', [])
         requires = data.get('requires', [])
 
-        file_info = {
-            "file": filename,
-            "domain": domain,
-            "lines": lines,
-            "complexity": complexity,
-            "functions": func_count,
-            "has_db": has_db,
-            "security": security_count,
-            "deps": len(includes) + len(requires)
-        }
-        all_file_metrics.append(file_info)
+        if compact:
+            # Ultra-compact string format
+            db_flag = "Y" if has_db else "N"
+            file_str = f"{filename} ({domain}) L:{lines} C:{complexity} F:{func_count} DB:{db_flag} S:{security_count}"
+            result_files.append(file_str)
+        else:
+            # Full JSON format for split mode
+            file_obj = {
+                "file": filename,
+                "domain": domain,
+                "lines": lines,
+                "complexity": complexity,
+                "functions": func_count,
+                "has_db": has_db,
+                "security": security_count,
+                "deps": len(includes) + len(requires)
+            }
+            result_files.append(file_obj)
 
-        # Aggregate by domain
-        by_domain[domain]["files"].append(filename)
-        by_domain[domain]["total_lines"] += lines
-        by_domain[domain]["total_complexity"] += complexity
-        by_domain[domain]["total_functions"] += func_count
-        by_domain[domain]["files_with_db"] += 1 if has_db else 0
-        by_domain[domain]["security_issues"] += security_count
-
-    # Sort files by complexity
-    all_file_metrics.sort(key=lambda x: x.get('complexity', 0), reverse=True)
-
-    # Create domain summary
-    domain_summary = {}
-    for domain, data in sorted(by_domain.items(), key=lambda x: x[1]["total_complexity"], reverse=True):
-        domain_summary[domain] = {
-            "file_count": len(data["files"]),
-            "files": data["files"],
-            "total_lines": data["total_lines"],
-            "total_complexity": data["total_complexity"],
-            "total_functions": data["total_functions"],
-            "files_with_db": data["files_with_db"],
-            "security_issues": data["security_issues"]
-        }
+        domain_stats[domain]["count"] += 1
+        domain_stats[domain]["lines"] += lines
+        domain_stats[domain]["complexity"] += complexity
+        domain_stats[domain]["db"] += 1 if has_db else 0
+        domain_stats[domain]["security"] += security_count
 
     return {
-        "total_files": len(all_file_metrics),
-        "all_files": all_file_metrics,
-        "by_domain": domain_summary,
-        "top_10_complex": all_file_metrics[:10]
+        "total": len(result_files),
+        "files": result_files,
+        "domains": dict(sorted(domain_stats.items(), key=lambda x: x[1]["complexity"], reverse=True))
     }
 
 
@@ -580,9 +549,15 @@ def generate_architecture_context(
     analysis_path: str,
     routes_path: Optional[str] = None,
     database_dir: Optional[str] = None,
-    output_path: Optional[str] = None
+    output_path: Optional[str] = None,
+    compact: bool = True
 ) -> Dict:
-    """Generate COMPREHENSIVE architecture context for LLM consumption."""
+    """Generate architecture context for LLM consumption.
+
+    Args:
+        compact: If True, use ultra-compact string format (for single file ~70KB).
+                 If False, use full JSON format (for split files ~100KB total).
+    """
 
     # Load analysis
     with open(analysis_path, 'r', encoding='utf-8') as f:
@@ -594,9 +569,9 @@ def generate_architecture_context(
         with open(routes_path, 'r', encoding='utf-8') as f:
             routes_data = json.load(f)
 
-    # Build comprehensive context
-    routes_summary = summarize_routes(routes_data)
-    files_summary = summarize_files(analysis)
+    # Build context (compact or full based on parameter)
+    routes_summary = summarize_routes(routes_data, compact=compact)
+    files_summary = summarize_files(analysis, compact=compact)
     security_summary = summarize_security(analysis)
     dependency_graph = extract_dependency_graph(analysis)
 
@@ -716,6 +691,11 @@ def main():
         default='output/analysis/architecture_context.json',
         help='Output path for context file'
     )
+    parser.add_argument(
+        '--split', '-s',
+        action='store_true',
+        help='Split into multiple files for larger context window usage'
+    )
 
     args = parser.parse_args()
 
@@ -723,34 +703,108 @@ def main():
         print(f"Error: Analysis file not found: {args.analysis}")
         return 1
 
-    context = generate_architecture_context(
-        args.analysis,
-        args.routes,
-        args.database,
-        args.output
-    )
+    if args.split:
+        # Split mode: generate full context and split into multiple files
+        context = generate_architecture_context(
+            args.analysis,
+            args.routes,
+            args.database,
+            None,  # Don't write single file
+            compact=False  # Use full JSON format
+        )
 
-    # Print comprehensive summary
-    files_data = context.get('files', {})
-    security_data = context.get('security', {})
-    routes_data = context.get('routes', {})
-    db_schema = context.get('database_schema', {})
-    deps_data = context.get('dependencies', {})
+        # Split into multiple files
+        output_dir = os.path.dirname(args.output)
+        os.makedirs(output_dir, exist_ok=True)
 
-    print(f"\n{'='*60}")
-    print(f"COMPREHENSIVE Architecture Context Summary")
-    print(f"{'='*60}")
-    print(f"  Entry points:      {len(context.get('entry_points', []))}")
-    print(f"  Total files:       {files_data.get('total_files', 0)}")
-    print(f"  Domains:           {len(files_data.get('by_domain', {}))}")
-    print(f"  Total routes:      {routes_data.get('total', 0)}")
-    print(f"  Route methods:     {routes_data.get('by_method', {})}")
-    print(f"  Security issues:   {security_data.get('total_issues', 0)}")
-    print(f"  Issue types:       {len(security_data.get('by_type', {}))}")
-    print(f"  Database tables:   {db_schema.get('table_count', 0)}")
-    print(f"  Total columns:     {db_schema.get('total_columns', 0)}")
-    print(f"  Key dependencies:  {len(deps_data.get('key_files', []))}")
-    print(f"{'='*60}")
+        # File 1: Core context (entry points, project, services, config, globals)
+        core_context = {
+            "_meta": context.get("_meta", {}),
+            "project": context.get("project", {}),
+            "entry_points": context.get("entry_points", []),
+            "recommended_services": context.get("recommended_services", {}),
+            "config": context.get("config", {}),
+            "globals": context.get("globals", {}),
+            "dependencies": context.get("dependencies", {}),
+        }
+        core_path = os.path.join(output_dir, "architecture_context.json")
+        with open(core_path, 'w', encoding='utf-8') as f:
+            json.dump(core_context, f, indent=2, ensure_ascii=False)
+
+        # File 2: Routes
+        routes_context = {
+            "_meta": {"part": "routes", "total_parts": 4},
+            "routes": context.get("routes", {})
+        }
+        routes_path = os.path.join(output_dir, "architecture_routes.json")
+        with open(routes_path, 'w', encoding='utf-8') as f:
+            json.dump(routes_context, f, indent=2, ensure_ascii=False)
+
+        # File 3: Files
+        files_context = {
+            "_meta": {"part": "files", "total_parts": 4},
+            "files": context.get("files", {})
+        }
+        files_path = os.path.join(output_dir, "architecture_files.json")
+        with open(files_path, 'w', encoding='utf-8') as f:
+            json.dump(files_context, f, indent=2, ensure_ascii=False)
+
+        # File 4: Security + Database + External APIs
+        security_db_context = {
+            "_meta": {"part": "security_database", "total_parts": 4},
+            "security": context.get("security", {}),
+            "database_schema": context.get("database_schema", {}),
+            "database_patterns": context.get("database_patterns", {}),
+            "external_apis": context.get("external_apis", [])
+        }
+        security_path = os.path.join(output_dir, "architecture_security_db.json")
+        with open(security_path, 'w', encoding='utf-8') as f:
+            json.dump(security_db_context, f, indent=2, ensure_ascii=False)
+
+        # Print summary
+        total_size = 0
+        print(f"\n{'='*60}")
+        print(f"SPLIT Architecture Context (4 files)")
+        print(f"{'='*60}")
+        for path in [core_path, routes_path, files_path, security_path]:
+            size_kb = os.path.getsize(path) / 1024
+            total_size += size_kb
+            print(f"  {os.path.basename(path)}: {size_kb:.1f} KB")
+        print(f"  {'─'*40}")
+        print(f"  Total: {total_size:.1f} KB (~{int(total_size * 1024 / 4):,} tokens)")
+        print(f"{'='*60}")
+
+    else:
+        # Compact mode: single file
+        context = generate_architecture_context(
+            args.analysis,
+            args.routes,
+            args.database,
+            args.output,
+            compact=True
+        )
+
+        # Print summary
+        files_data = context.get('files', {})
+        security_data = context.get('security', {})
+        routes_data = context.get('routes', {})
+        db_schema = context.get('database_schema', {})
+        deps_data = context.get('dependencies', {})
+
+        print(f"\n{'='*60}")
+        print(f"COMPACT Architecture Context (single file)")
+        print(f"{'='*60}")
+        print(f"  Entry points:      {len(context.get('entry_points', []))}")
+        print(f"  Total files:       {files_data.get('total', 0)}")
+        print(f"  Domains:           {len(files_data.get('domains', {}))}")
+        print(f"  Total routes:      {routes_data.get('total', 0)}")
+        print(f"  Route methods:     {routes_data.get('by_method', {})}")
+        print(f"  Security issues:   {security_data.get('total_issues', 0)}")
+        print(f"  Issue types:       {len(security_data.get('by_type', {}))}")
+        print(f"  Database tables:   {db_schema.get('table_count', 0)}")
+        print(f"  Total columns:     {db_schema.get('total_columns', 0)}")
+        print(f"  Key dependencies:  {len(deps_data.get('key_files', []))}")
+        print(f"{'='*60}")
 
     return 0
 

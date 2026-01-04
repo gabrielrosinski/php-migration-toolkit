@@ -78,15 +78,27 @@ mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
 
 **IMPORTANT: Read these files IN ORDER:**
 
-1. **`output/analysis/architecture_context.json`** - Comprehensive context (~128KB) ⬅️ READ THIS FIRST
-   - Contains ALL data you need: entry points, files with metrics, domains, routes, security issues, database tables with columns, dependency graph
-   - This single file replaces the need to read multiple large source files
+### Architecture Context (4 files, ~113KB total)
+Read ALL 4 files to get the complete picture:
 
-2. **`MICROSERVICES_PATTERNS.md`** - Architecture patterns reference
+1. **`output/analysis/architecture_context.json`** - Core context (~15KB)
+   - Entry points, project info, recommended services, config, globals, dependencies
 
-3. **`output/analysis/legacy_analysis.md`** - Human-readable analysis summary (optional, for additional context)
+2. **`output/analysis/architecture_routes.json`** - Routes (~27KB)
+   - ALL routes with method, path, handler, domain, auth requirements
 
-**Start by reading `output/analysis/architecture_context.json` now.**
+3. **`output/analysis/architecture_files.json`** - Files (~37KB)
+   - ALL files with lines, complexity, functions, database usage, security issues
+
+4. **`output/analysis/architecture_security_db.json`** - Security & Database (~35KB)
+   - ALL security issues grouped by type, database schema with all tables/columns, external APIs
+
+### Reference Documents
+5. **`MICROSERVICES_PATTERNS.md`** - Architecture patterns reference
+
+6. **`output/analysis/legacy_analysis.md`** - Human-readable analysis summary (optional)
+
+**Start by reading all 4 architecture context files now.**
 
 ---
 
@@ -102,6 +114,190 @@ Design a complete **Nx monorepo architecture** by:
 6. **Authentication strategy** - Map PHP sessions to NestJS auth
 7. **Data migration strategy** - How to migrate data safely
 8. **Creating migration plan** - Priority order for implementation
+
+---
+
+## CRITICAL: API BACKWARDS COMPATIBILITY
+
+**DO NOT CHANGE API ROUTES OR RESPONSE FORMATS.**
+
+The frontend and mobile clients depend on the existing API contract. Breaking changes will cause production outages.
+
+### Route Preservation Rules
+
+1. **Keep EXACT same URL paths** - If legacy has `/item/:id`, NestJS must use `/item/:id` (NOT `/products/:id`)
+2. **Keep EXACT same HTTP methods** - Don't change GET to POST or vice versa
+3. **Keep EXACT same query parameters** - If legacy uses `?cat=123`, don't change to `?categoryId=123`
+4. **Keep EXACT same response JSON structure** - Field names, nesting, types must match
+
+### Response Format Preservation
+
+```typescript
+// WRONG - Changing response format
+// Legacy returns: { "name": "Product A", "price": 100 }
+// NestJS returns: { "data": { "productName": "Product A", "priceInCents": 10000 } }
+
+// CORRECT - Matching legacy format exactly
+// Legacy returns: { "name": "Product A", "price": 100 }
+// NestJS returns: { "name": "Product A", "price": 100 }
+```
+
+### Route Mapping Table Format
+
+When documenting routes, use this format:
+
+| Legacy Route | NestJS Route | Response Format |
+|--------------|--------------|-----------------|
+| GET /item/:id | GET /item/:id | **UNCHANGED** |
+| GET /category/:id | GET /category/:id | **UNCHANGED** |
+
+### If Consolidation is Desired (Future Phase)
+
+If you want cleaner routes later, plan a **deprecation strategy**:
+
+1. **Phase 1**: Implement NestJS with EXACT legacy routes
+2. **Phase 2**: Add NEW clean routes alongside (e.g., `/api/v2/products/:id`)
+3. **Phase 3**: Update frontend to use new routes
+4. **Phase 4**: Deprecate old routes with warnings
+5. **Phase 5**: Remove old routes after migration complete
+
+**For this design, focus on Phase 1 only.**
+
+---
+
+## CRITICAL: CLOUD-AGNOSTIC INFRASTRUCTURE
+
+**All infrastructure recommendations MUST be cloud-provider agnostic.**
+
+The developer will choose their cloud provider (AWS, GCP, Azure, on-premise, etc.). Your design must use **generic service types**, not provider-specific services.
+
+### Infrastructure Naming Rules
+
+**NEVER use provider-specific names. ALWAYS use generic service types:**
+
+| ❌ DO NOT Use | ✅ USE Instead |
+|---------------|----------------|
+| AWS ALB, Azure Load Balancer | Load Balancer |
+| AWS CloudFront, Azure CDN | CDN |
+| AWS S3, Azure Blob, GCS | Object Storage |
+| AWS RDS, Azure SQL | Managed Database |
+| AWS ElastiCache, Azure Cache | Managed Cache (Redis) |
+| AWS SQS, Azure Service Bus | Message Queue |
+| AWS SNS, Azure Event Grid | Pub/Sub / Event Bus |
+| AWS Secrets Manager, Azure Key Vault | Secrets Manager |
+| AWS CloudWatch, Azure Monitor | Logging / Monitoring |
+| AWS ECR, Azure ACR, GCR | Container Registry |
+| AWS Lambda, Azure Functions | Serverless Functions |
+| AWS EKS, Azure AKS, GKE | Kubernetes (managed) |
+| PagerDuty, OpsGenie | Alerting Service |
+
+### How to Document Infrastructure
+
+When documenting infrastructure requirements, use this format:
+
+```yaml
+Infrastructure Requirements:
+  Load Balancing:
+    Type: Load Balancer
+    Features Required: [SSL termination, health checks, sticky sessions]
+    Examples: nginx, HAProxy, Traefik, or cloud provider's load balancer
+
+  Caching:
+    Type: Redis-compatible cache
+    Features Required: [clustering, persistence]
+    Examples: Redis, KeyDB, Dragonfly, or managed Redis service
+
+  Object Storage:
+    Type: S3-compatible object storage
+    Features Required: [presigned URLs, lifecycle policies]
+    Examples: MinIO, any S3-compatible service
+
+  Database:
+    Type: MySQL 8.x compatible
+    Features Required: [read replicas, point-in-time recovery]
+    Examples: MySQL, MariaDB, Percona, or managed MySQL service
+
+  Message Queue:
+    Type: Message Queue
+    Features Required: [dead letter queues, at-least-once delivery]
+    Examples: RabbitMQ, Redis Streams, or managed queue service
+
+  Secrets:
+    Type: Secrets Manager
+    Features Required: [encryption at rest, audit logging]
+    Examples: HashiCorp Vault, SOPS, Kubernetes Secrets, or cloud secrets manager
+
+  Container Registry:
+    Type: Container Registry
+    Features Required: [vulnerability scanning, private access]
+    Examples: Harbor, any OCI-compatible registry
+
+  Monitoring:
+    Type: Observability Stack
+    Components:
+      - Logging: ELK, Loki, or cloud logging
+      - Metrics: Prometheus, or cloud metrics
+      - Tracing: Jaeger, Zipkin, or cloud tracing
+      - Alerting: Alertmanager, or alerting service
+```
+
+### Code Examples Must Be Provider-Agnostic
+
+When showing infrastructure code, use interfaces/abstractions:
+
+```typescript
+// ✅ CORRECT - Provider-agnostic interface
+interface ObjectStorageService {
+  upload(key: string, data: Buffer): Promise<string>;
+  download(key: string): Promise<Buffer>;
+  getSignedUrl(key: string, expiresIn: number): Promise<string>;
+  delete(key: string): Promise<void>;
+}
+
+// ✅ CORRECT - Provider-agnostic secrets
+interface SecretsService {
+  getSecret(key: string): Promise<string>;
+  setSecret(key: string, value: string): Promise<void>;
+}
+
+// ❌ WRONG - Provider-specific
+import { S3Client } from '@aws-sdk/client-s3';
+import { SecretsManager } from '@aws-sdk/client-secrets-manager';
+```
+
+### Deployment Diagrams
+
+When creating deployment diagrams, use generic labels:
+
+```
+❌ WRONG:
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ CloudFront  │ --> │   AWS ALB   │ --> │    EKS      │
+└─────────────┘     └─────────────┘     └─────────────┘
+
+✅ CORRECT:
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│     CDN     │ --> │Load Balancer│ --> │ Kubernetes  │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+### Environment Variables
+
+Use generic environment variable names:
+
+```bash
+# ✅ CORRECT - Generic names
+DATABASE_URL=mysql://...
+CACHE_URL=redis://...
+OBJECT_STORAGE_ENDPOINT=https://...
+OBJECT_STORAGE_BUCKET=my-bucket
+SECRETS_PROVIDER=vault  # or: env, k8s, cloud
+
+# ❌ WRONG - Provider-specific names
+AWS_S3_BUCKET=...
+ELASTICACHE_URL=...
+RDS_HOSTNAME=...
+```
 
 ---
 
@@ -460,7 +656,54 @@ nx generate @nx/nest:module users --project=gateway
 nx generate @nx/nest:module orders --project=gateway
 \`\`\`
 
-## 9. Migration Plan
+## 9. Route Mapping (EXACT Preservation)
+
+| Legacy Route | NestJS Route | Controller | Response |
+|--------------|--------------|------------|----------|
+| GET /item/:id | GET /item/:id | ItemController | **UNCHANGED** |
+| GET /category/:id | GET /category/:id | CategoryController | **UNCHANGED** |
+
+**NOTE:** All routes must be IDENTICAL to legacy. No renaming allowed.
+
+## 10. Infrastructure Requirements (Cloud-Agnostic)
+
+### Required Services
+| Service Type | Features Required | Self-Hosted Options | Notes |
+|--------------|-------------------|---------------------|-------|
+| Load Balancer | SSL, health checks | nginx, HAProxy, Traefik | |
+| Cache | Redis protocol, clustering | Redis, KeyDB | |
+| Object Storage | S3-compatible API | MinIO | For file uploads |
+| Database | MySQL 8.x compatible | MySQL, MariaDB | |
+| Secrets Manager | Encryption at rest | Vault, SOPS, K8s Secrets | |
+| Container Registry | OCI-compatible | Harbor, distribution | |
+
+### Observability Stack
+| Component | Purpose | Self-Hosted Options |
+|-----------|---------|---------------------|
+| Logging | Centralized logs | ELK, Loki + Grafana |
+| Metrics | Performance metrics | Prometheus + Grafana |
+| Tracing | Request tracing | Jaeger, Zipkin |
+| Alerting | Incident alerts | Alertmanager |
+
+### Environment Configuration
+\`\`\`bash
+# Database
+DATABASE_URL=mysql://user:pass@host:3306/db
+
+# Cache
+CACHE_URL=redis://host:6379
+
+# Object Storage (S3-compatible)
+OBJECT_STORAGE_ENDPOINT=https://storage.example.com
+OBJECT_STORAGE_BUCKET=app-uploads
+OBJECT_STORAGE_ACCESS_KEY=...
+OBJECT_STORAGE_SECRET_KEY=...
+
+# Secrets (provider selected at deployment)
+SECRETS_PROVIDER=env|vault|k8s|cloud
+\`\`\`
+
+## 11. Migration Plan
 | Priority | Module/App | Legacy Files | Risk | Dependencies |
 |----------|------------|--------------|------|--------------|
 ```
@@ -470,6 +713,11 @@ nx generate @nx/nest:module orders --project=gateway
 ## VERIFICATION
 
 Before completing, verify:
+- [ ] **API routes are IDENTICAL to legacy** (no renaming, no restructuring)
+- [ ] **Response formats are IDENTICAL to legacy** (same JSON structure)
+- [ ] **Infrastructure is CLOUD-AGNOSTIC** (no AWS/Azure/GCP specific services named)
+- [ ] **No provider-specific code** (no @aws-sdk, @azure, @google-cloud imports)
+- [ ] **Generic service types used** (Load Balancer, not ALB; Object Storage, not S3)
 - [ ] All legacy routes mapped to modules/apps
 - [ ] All database tables assigned to exactly one app
 - [ ] Nx structure is as simple as possible (prefer modules over separate apps)
@@ -480,6 +728,7 @@ Before completing, verify:
 - [ ] Data migration approach is documented
 - [ ] Global state mapping covers all PHP patterns found
 - [ ] Security issues from analysis are addressed in design
+- [ ] Infrastructure requirements documented with self-hosted options
 
 ---
 

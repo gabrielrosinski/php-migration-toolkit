@@ -42,12 +42,15 @@ python scripts/extract_routes.py <php_dir> --output routes.json --nginx /path/to
 # Database schema to TypeORM entities
 python scripts/extract_database.py --sql-file schema.sql --output-dir ./entities
 
-# Generate comprehensive LLM-optimized context (~128KB) from large analysis files
+# Generate split LLM-optimized context (4 files, ~113KB total) from large analysis files
 python scripts/generate_architecture_context.py \
   -a output/analysis/legacy_analysis.json \
   -r output/analysis/routes.json \
   -d output/database \
+  --split \
   -o output/analysis/architecture_context.json
+# Generates: architecture_context.json, architecture_routes.json,
+#            architecture_files.json, architecture_security_db.json
 
 # Chunk large PHP files for context limits
 ./scripts/chunk_legacy_php.sh huge_file.php ./chunks 400
@@ -178,11 +181,34 @@ my-project/
 - Claude Code CLI with Ralph Wiggum plugin
 - Context7 MCP for documentation queries
 
-## Context7 MCP Documentation Queries
+## Knowledge Sources by Workflow Phase
 
-The prompts use Context7 to query:
-- `/nestjs/docs.nestjs.com` - NestJS official docs
-- `/websites/php-legacy-docs_zend-manual-php5-en` - PHP 5 manual for legacy behavior
+### Available Knowledge Sources
+
+| Source | Type | Library ID / Path |
+|--------|------|-------------------|
+| NestJS Docs | Context7 MCP | `/nestjs/docs.nestjs.com` |
+| PHP 5 Manual | Context7 MCP | `/websites/php-legacy-docs_zend-manual-php5-en` |
+| Microservices Patterns | Local File | `MICROSERVICES_PATTERNS.md` |
+
+### When to Use Each Source
+
+| Workflow Phase | Knowledge Source | Use For |
+|----------------|------------------|---------|
+| **Step 1: Analyze PHP** | PHP 5 Manual (Context7) | Understanding deprecated functions (`mysql_*`, `ereg`, `split`), legacy behavior, superglobals |
+| **Step 2: Design Architecture** | NestJS Docs (Context7) | Best practices for modules, guards, TypeORM, DI patterns |
+| **Step 2: Design Architecture** | MICROSERVICES_PATTERNS.md | Service boundaries, communication patterns, Saga, Circuit Breaker |
+| **Step 3: Generate Reports** | All three sources | Accurate code examples, security remediation, pattern documentation |
+| **Step 4: Migrate Services** | NestJS Docs (Context7) | Correct decorator syntax, validation pipes, repository patterns |
+| **Step 5: Validation** | NestJS Docs (Context7) | Testing module setup, Jest patterns, supertest usage |
+
+### Context7 Query Format
+
+```
+mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
+```
+
+**Important:** Query on-demand only - do not bulk-fetch documentation to avoid context bloat.
 
 ## Important Files for Context
 

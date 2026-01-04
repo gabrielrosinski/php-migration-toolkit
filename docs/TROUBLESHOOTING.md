@@ -14,6 +14,7 @@ This guide covers common issues encountered during PHP to NestJS migration and t
 6. [Testing Issues](#testing-issues)
 7. [Ralph Wiggum Loop Issues](#ralph-wiggum-loop-issues)
 8. [Security Migration Issues](#security-migration-issues)
+9. [Context7 MCP Issues](#context7-mcp-issues)
 
 ---
 
@@ -528,3 +529,70 @@ For toolkit-specific issues:
 1. Review the prompt files in `prompts/` directory
 2. Check the script source code in `scripts/`
 3. Ensure all dependencies are installed
+
+---
+
+## Context7 MCP Issues
+
+### Context7 MCP not found
+
+```bash
+# Verify installation
+claude mcp list
+
+# If not listed, install it
+claude mcp add context7 -- npx -y @upstash/context7-mcp
+```
+
+### Query returns empty or error
+
+1. Check library ID is correct:
+   - NestJS: `/nestjs/docs.nestjs.com`
+   - PHP 5: `/websites/php-legacy-docs_zend-manual-php5-en`
+
+2. Use `mcp__context7__resolve-library-id` first if unsure:
+   ```
+   mcp__context7__resolve-library-id(libraryName="nestjs", query="authentication guards")
+   ```
+
+3. Then query with the resolved ID:
+   ```
+   mcp__context7__query-docs(libraryId="/nestjs/docs.nestjs.com", query="JwtAuthGuard implementation")
+   ```
+
+### Query not returning relevant results
+
+Be specific in your queries:
+
+```
+# Too vague
+query="authentication"
+
+# Better
+query="JwtAuthGuard implementation with Passport strategy"
+
+# Best
+query="How to create custom guard extending AuthGuard with JWT validation"
+```
+
+### Context window getting full from queries
+
+1. Only query when genuinely uncertain
+2. Don't bulk-fetch documentation
+3. Use specific queries instead of broad topics
+4. Reference `MICROSERVICES_PATTERNS.md` locally instead of querying for patterns
+
+### Prompts not using Context7
+
+Ensure the prompt file has the documentation reference section:
+
+```markdown
+## DOCUMENTATION REFERENCE (Context7 MCP) - ON-DEMAND ONLY
+
+| Source | Library ID |
+|--------|------------|
+| NestJS Docs | `/nestjs/docs.nestjs.com` |
+| PHP 5 Manual | `/websites/php-legacy-docs_zend-manual-php5-en` |
+```
+
+All prompts in `prompts/` directory should have this section. If missing, add it.

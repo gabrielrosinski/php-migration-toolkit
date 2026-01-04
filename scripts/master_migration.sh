@@ -611,6 +611,12 @@ phase1_analysis() {
         CONTEXT_CMD="$CONTEXT_CMD -r $OUTPUT_DIR/analysis/routes.json"
     fi
 
+    # Include database directory for schema
+    CONTEXT_CMD="$CONTEXT_CMD -d $OUTPUT_DIR/database"
+
+    # Use split mode for comprehensive context across multiple files
+    CONTEXT_CMD="$CONTEXT_CMD --split"
+
     CONTEXT_CMD="$CONTEXT_CMD -o $OUTPUT_DIR/analysis/architecture_context.json"
 
     run_with_spinner "Generating architecture context" 60 \
@@ -701,6 +707,8 @@ phase2_routes() {
             python3 "$SCRIPT_DIR/generate_architecture_context.py" \
                 -a "$OUTPUT_DIR/analysis/legacy_analysis.json" \
                 -r "$OUTPUT_DIR/analysis/routes.json" \
+                -d "$OUTPUT_DIR/database" \
+                --split \
                 -o "$OUTPUT_DIR/analysis/architecture_context.json" || {
                     echo -e "  ${YELLOW}⚠ Context update failed (non-fatal)${NC}"
                 }
@@ -781,6 +789,30 @@ phase3_database() {
         else
             echo -e "  ${RED}✗ No analysis file found. Run phase 1 first.${NC}"
             exit 1
+        fi
+    fi
+
+    # Regenerate architecture context with database schema
+    if [ -f "$OUTPUT_DIR/analysis/legacy_analysis.json" ]; then
+        echo ""
+        run_with_spinner "Updating architecture context with database schema" 60 \
+            python3 "$SCRIPT_DIR/generate_architecture_context.py" \
+                -a "$OUTPUT_DIR/analysis/legacy_analysis.json" \
+                -r "$OUTPUT_DIR/analysis/routes.json" \
+                -d "$OUTPUT_DIR/database" \
+                --split \
+                -o "$OUTPUT_DIR/analysis/architecture_context.json" || {
+                    echo -e "  ${YELLOW}⚠ Context update failed (non-fatal)${NC}"
+                }
+
+        if [ -f "$OUTPUT_DIR/analysis/architecture_context.json" ]; then
+            # Show total size of all context files
+            TOTAL_SIZE=0
+            for f in "$OUTPUT_DIR/analysis/architecture_"*.json; do
+                SIZE=$(du -k "$f" | cut -f1)
+                TOTAL_SIZE=$((TOTAL_SIZE + SIZE))
+            done
+            echo -e "  ${GREEN}✓${NC} Updated architecture context (${TOTAL_SIZE}KB total across 4 files)"
         fi
     fi
 

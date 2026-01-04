@@ -334,6 +334,68 @@ Quick fixes:
 - **Ralph loop stuck**: Check completion promise format, review errors
 - **Build fails**: Run `nx reset`, check tsconfig paths
 
+## Knowledge Sources
+
+Each phase of the migration can leverage external documentation when needed:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    KNOWLEDGE SOURCES                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Context7 MCP (On-Demand Documentation Queries)                     │
+│  ══════════════════════════════════════════════                     │
+│                                                                      │
+│  ┌─────────────────────┐    ┌─────────────────────┐                 │
+│  │    NestJS Docs      │    │   PHP 5 Manual      │                 │
+│  │ /nestjs/docs.nestjs │    │ /websites/php-legacy│                 │
+│  │     .com            │    │ -docs_zend-manual   │                 │
+│  └─────────────────────┘    └─────────────────────┘                 │
+│                                                                      │
+│  Use for:                    Use for:                               │
+│  - Module patterns           - Legacy function behavior             │
+│  - TypeORM syntax            - mysql_* functions                    │
+│  - Guards & pipes            - Superglobals                         │
+│  - Testing setup             - Deprecated APIs                      │
+│                                                                      │
+│  Local Reference Files                                              │
+│  ═════════════════════                                              │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  MICROSERVICES_PATTERNS.md                                   │   │
+│  │  - Strangler Fig Pattern                                     │   │
+│  │  - Saga Pattern for distributed transactions                 │   │
+│  │  - Circuit Breaker for resilience                            │   │
+│  │  - Service decomposition guidelines                          │   │
+│  │  - API Gateway patterns                                      │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+│  When to Query (On-Demand Only)                                     │
+│  ══════════════════════════════                                     │
+│                                                                      │
+│  ✓ Query when uncertain about specific syntax or patterns          │
+│  ✓ Query to verify best practices for code examples                │
+│  ✓ Query to understand legacy PHP function behavior                │
+│                                                                      │
+│  ✗ Do NOT bulk-fetch documentation                                 │
+│  ✗ Do NOT query for general concepts you already know              │
+│  ✗ Do NOT fill context with unnecessary documentation              │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Knowledge Source Usage by Step
+
+| Step | Primary Sources | Query Examples |
+|------|-----------------|----------------|
+| Step 1: Analysis | PHP 5 Manual | "What does mysql_real_escape_string do?" |
+| Step 2: Design | NestJS Docs, MICROSERVICES_PATTERNS.md | "NestJS module structure best practices" |
+| Step 3: Reports | All sources | "TypeORM transaction pattern with QueryRunner" |
+| Step 4: Migration | NestJS Docs | "FileInterceptor with validation" |
+| Step 5: Validation | NestJS Docs | "Jest testing module setup for TypeORM" |
+
+---
+
 ## FAQ
 
 **Q: Why set max-iterations to 60 if typical is 15?**
