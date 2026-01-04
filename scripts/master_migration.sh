@@ -21,6 +21,132 @@ CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 NC='\033[0m'
 
+# Spinner for visual progress
+SPINNER_PID=""
+SPINNER_CHARS="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+CURRENT_SPINNER_MSG=""
+
+start_spinner() {
+    local msg="$1"
+    CURRENT_SPINNER_MSG="$msg"
+    (
+        i=0
+        while true; do
+            printf "\r  ${CYAN}${SPINNER_CHARS:i++%10:1}${NC} %s..." "$msg"
+            sleep 0.1
+        done
+    ) &
+    SPINNER_PID=$!
+    disown $SPINNER_PID 2>/dev/null
+}
+
+stop_spinner() {
+    local status="$1"  # "success" or "fail" or "warn"
+    local msg="$2"
+    if [ -n "$SPINNER_PID" ]; then
+        kill $SPINNER_PID 2>/dev/null
+        wait $SPINNER_PID 2>/dev/null
+        SPINNER_PID=""
+    fi
+    printf "\r                                                                          \r"
+    case "$status" in
+        success) echo -e "  ${GREEN}✓${NC} $msg" ;;
+        fail)    echo -e "  ${RED}✗${NC} $msg" ;;
+        warn)    echo -e "  ${YELLOW}!${NC} $msg" ;;
+    esac
+    CURRENT_SPINNER_MSG=""
+}
+
+# Detect timeout command (gtimeout on macOS with coreutils, timeout on Linux)
+TIMEOUT_CMD=""
+if command -v timeout &> /dev/null; then
+    TIMEOUT_CMD="timeout"
+elif command -v gtimeout &> /dev/null; then
+    TIMEOUT_CMD="gtimeout"
+fi
+
+# Run a command with spinner, proper error handling, and optional timeout
+# Usage: run_with_spinner "message" [timeout_seconds] command args...
+run_with_spinner() {
+    local msg="$1"
+    shift
+
+    local timeout_sec=""
+    if [[ "$1" =~ ^[0-9]+$ ]]; then
+        timeout_sec="$1"
+        shift
+    fi
+
+    start_spinner "$msg"
+
+    # Create temp file for stderr
+    local stderr_file=$(mktemp)
+    local exit_code=0
+
+    # Run command, capture stderr
+    if [ -n "$timeout_sec" ] && [ -n "$TIMEOUT_CMD" ]; then
+        $TIMEOUT_CMD "$timeout_sec" "$@" 2>"$stderr_file" || exit_code=$?
+        if [ $exit_code -eq 124 ]; then
+            stop_spinner "fail" "$msg - TIMEOUT after ${timeout_sec}s"
+            echo -e "  ${RED}Command timed out:${NC} $*"
+            rm -f "$stderr_file"
+            return 1
+        fi
+    else
+        # No timeout available or not requested - run without timeout
+        "$@" 2>"$stderr_file" || exit_code=$?
+    fi
+
+    if [ $exit_code -ne 0 ]; then
+        stop_spinner "fail" "$msg - FAILED (exit code: $exit_code)"
+        echo ""
+        echo -e "  ${RED}━━━ ERROR DETAILS ━━━${NC}"
+        echo -e "  ${RED}Command:${NC} $*"
+        echo -e "  ${RED}Exit code:${NC} $exit_code"
+        if [ -s "$stderr_file" ]; then
+            echo -e "  ${RED}Error output:${NC}"
+            sed 's/^/    /' "$stderr_file"
+        fi
+        echo -e "  ${RED}━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        rm -f "$stderr_file"
+        return $exit_code
+    fi
+
+    stop_spinner "success" "$msg"
+    rm -f "$stderr_file"
+    return 0
+}
+
+# Cleanup on exit/interrupt
+cleanup() {
+    local exit_code=$?
+    if [ -n "$SPINNER_PID" ]; then
+        kill $SPINNER_PID 2>/dev/null
+        printf "\r                                                                          \r"
+    fi
+    if [ $exit_code -ne 0 ] && [ -n "$CURRENT_SPINNER_MSG" ]; then
+        echo -e "  ${RED}✗${NC} $CURRENT_SPINNER_MSG - INTERRUPTED"
+    fi
+}
+trap cleanup EXIT INT TERM
+
+# Error handler - shows where error occurred
+error_handler() {
+    local line_no=$1
+    local error_code=$2
+    echo ""
+    echo -e "${RED}╔══════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║  SCRIPT FAILED                                                   ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${RED}  Line:${NC} $line_no"
+    echo -e "${RED}  Exit code:${NC} $error_code"
+    echo -e "${RED}  Log file:${NC} $LOG_FILE"
+    echo ""
+    exit $error_code
+}
+trap 'error_handler ${LINENO} $?' ERR
+
 # Default values
 PROJECT_ROOT=""
 OUTPUT_DIR=""
@@ -30,6 +156,12 @@ SKIP_PHASES=""
 SQL_FILE=""
 NGINX_CONFIG=""
 INCLUDE_DIRECT_FILES=false
+
+# Auto-discovered files (populated during phase 0)
+DISCOVERED_SQL_FILES=()
+DISCOVERED_NGINX_CONFIGS=()
+DISCOVERED_HTACCESS_FILES=()
+DISCOVERED_APACHE_CONFIGS=()
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,19 +176,26 @@ usage() {
     echo "  -c, --config <file>      Configuration file (YAML or shell)"
     echo "  -r, --resume <phase>     Resume from specific phase (0-6)"
     echo "  -s, --skip <phases>      Skip phases (comma-separated, e.g., 4,5)"
-    echo "  --sql-file <file>        SQL schema file for database extraction"
-    echo "  --nginx <file>           Nginx configuration file for route extraction"
+    echo "  --sql-file <file>        Override auto-discovered SQL file"
+    echo "  --nginx <file>           Override auto-discovered nginx config"
     echo "  --include-direct-files   Include directly accessible PHP files in route analysis"
     echo "  -h, --help               Show this help"
     echo ""
+    echo "Auto-Discovery:"
+    echo "  The script automatically finds and uses:"
+    echo "  - *.sql files (first found used for schema extraction)"
+    echo "  - */nginx/*.conf files (first found used for route extraction)"
+    echo "  - */httpd/*.conf, vhost.conf (listed for reference)"
+    echo "  - .htaccess files (all included in route analysis)"
+    echo ""
     echo "Examples:"
-    echo "  $0 /var/www/legacy-php"
-    echo "  $0 /var/www/legacy-php -o ./output -c migration.config"
-    echo "  $0 /var/www/legacy-php --resume 3"
-    echo "  $0 /var/www/legacy-php --sql-file ./database/schema.sql"
+    echo "  $0 /var/www/legacy-php -o ./output"
+    echo "  $0 /var/www/legacy-php -o ./output --include-direct-files"
+    echo "  $0 /var/www/legacy-php -o ./output --sql-file ./db/schema.sql"
+    echo "  $0 /var/www/legacy-php -o ./output -r 3"
     echo ""
     echo "Phases:"
-    echo "  0: Environment check"
+    echo "  0: Environment check + auto-discovery"
     echo "  1: Legacy system analysis"
     echo "  2: Route extraction"
     echo "  3: Database schema extraction"
@@ -180,6 +319,8 @@ echo "Started: $(date)"
 echo "Project: $PROJECT_ROOT"
 echo "Output:  $OUTPUT_DIR"
 echo "Log:     $LOG_FILE"
+echo ""
+sleep 0.1  # Let tee flush before spinner starts
 
 if [ -n "$RESUME_FROM" ]; then
     echo -e "${YELLOW}Resuming from phase: $RESUME_FROM${NC}"
@@ -231,11 +372,11 @@ phase0_environment() {
         MISSING="$MISSING npm"
     fi
 
-    # Check Nx CLI
-    if command -v nx &> /dev/null || npx nx --version &> /dev/null; then
-        echo -e "  ${GREEN}✓${NC} Nx CLI: Available (via npx)"
+    # Check Nx CLI (don't use npx - it hangs trying to download)
+    if command -v nx &> /dev/null; then
+        echo -e "  ${GREEN}✓${NC} Nx CLI: $(nx --version 2>/dev/null || echo 'installed')"
     else
-        echo -e "  ${YELLOW}!${NC} Nx CLI: Will use npx (npm i -g nx for global install)"
+        echo -e "  ${YELLOW}!${NC} Nx CLI: Not installed globally (npm i -g nx)"
     fi
 
     # Check NestJS CLI
@@ -262,13 +403,21 @@ phase0_environment() {
     echo ""
 
     # Validate PHP project
-    echo "  Validating PHP project..."
     if [ ! -d "$PROJECT_ROOT" ]; then
         echo -e "  ${RED}✗${NC} Project directory does not exist: $PROJECT_ROOT"
         exit 1
     fi
 
-    PHP_COUNT=$(find "$PROJECT_ROOT" -name "*.php" -type f 2>/dev/null | wc -l)
+    # Scan project with timeout
+    run_with_spinner "Scanning PHP project" 60 \
+        bash -c "find '$PROJECT_ROOT' -name '*.php' -type f 2>/dev/null | wc -l > /tmp/php_count_$$.tmp" || {
+            echo -e "  ${RED}✗${NC} Failed to scan project directory"
+            exit 1
+        }
+    PHP_COUNT=$(cat /tmp/php_count_$$.tmp 2>/dev/null | tr -d ' ')
+    rm -f /tmp/php_count_$$.tmp
+    HTACCESS_COUNT=$(find "$PROJECT_ROOT" -name ".htaccess" -type f 2>/dev/null | wc -l | tr -d ' ')
+
     if [ "$PHP_COUNT" -eq 0 ]; then
         echo -e "  ${RED}✗${NC} No PHP files found in $PROJECT_ROOT"
         exit 1
@@ -276,13 +425,96 @@ phase0_environment() {
     echo -e "  ${GREEN}✓${NC} Found $PHP_COUNT PHP files"
 
     # Check for .htaccess
-    HTACCESS_COUNT=$(find "$PROJECT_ROOT" -name ".htaccess" -type f 2>/dev/null | wc -l)
     if [ "$HTACCESS_COUNT" -gt 0 ]; then
         echo -e "  ${GREEN}✓${NC} Found $HTACCESS_COUNT .htaccess files"
     else
         echo -e "  ${YELLOW}!${NC} No .htaccess files found (will rely on PHP routing)"
     fi
 
+    echo ""
+
+    # =========================================================================
+    # AUTO-DISCOVERY: Find SQL, nginx, and config files in project
+    # =========================================================================
+    echo -e "  ${CYAN}Auto-discovering configuration files...${NC}"
+    echo ""
+
+    # Discover SQL files
+    while IFS= read -r -d '' file; do
+        DISCOVERED_SQL_FILES+=("$file")
+    done < <(find "$PROJECT_ROOT" -type f -name "*.sql" -print0 2>/dev/null)
+
+    if [ ${#DISCOVERED_SQL_FILES[@]} -gt 0 ]; then
+        echo -e "  ${GREEN}✓${NC} Found ${#DISCOVERED_SQL_FILES[@]} SQL file(s):"
+        for f in "${DISCOVERED_SQL_FILES[@]}"; do
+            echo -e "    ${CYAN}→${NC} $f"
+        done
+        # Use first SQL file if none specified
+        if [ -z "$SQL_FILE" ]; then
+            SQL_FILE="${DISCOVERED_SQL_FILES[0]}"
+            echo -e "    ${YELLOW}Using:${NC} $SQL_FILE"
+        fi
+    else
+        echo -e "  ${YELLOW}!${NC} No SQL files found in project"
+    fi
+
+    # Discover nginx configs (in project directory)
+    while IFS= read -r -d '' file; do
+        DISCOVERED_NGINX_CONFIGS+=("$file")
+    done < <(find "$PROJECT_ROOT" -type f \( -name "nginx*.conf" -o -name "nginx.conf" -o -path "*/nginx/*.conf" -o -path "*/nginx/*" -name "*.conf" \) -print0 2>/dev/null)
+
+    if [ ${#DISCOVERED_NGINX_CONFIGS[@]} -gt 0 ]; then
+        echo -e "  ${GREEN}✓${NC} Found ${#DISCOVERED_NGINX_CONFIGS[@]} nginx config(s):"
+        for f in "${DISCOVERED_NGINX_CONFIGS[@]}"; do
+            echo -e "    ${CYAN}→${NC} $f"
+        done
+        # Use first nginx config if none specified
+        if [ -z "$NGINX_CONFIG" ]; then
+            NGINX_CONFIG="${DISCOVERED_NGINX_CONFIGS[0]}"
+            echo -e "    ${YELLOW}Using:${NC} $NGINX_CONFIG"
+        fi
+    else
+        echo -e "  ${YELLOW}!${NC} No nginx configs found in project"
+    fi
+
+    # Discover Apache/httpd configs
+    while IFS= read -r -d '' file; do
+        DISCOVERED_APACHE_CONFIGS+=("$file")
+    done < <(find "$PROJECT_ROOT" -type f \( -path "*/httpd/*.conf" -o -path "*/apache/*.conf" -o -name "httpd.conf" -o -name "apache*.conf" -o -name "vhost.conf" \) -print0 2>/dev/null)
+
+    if [ ${#DISCOVERED_APACHE_CONFIGS[@]} -gt 0 ]; then
+        echo -e "  ${GREEN}✓${NC} Found ${#DISCOVERED_APACHE_CONFIGS[@]} Apache/httpd config(s):"
+        for f in "${DISCOVERED_APACHE_CONFIGS[@]}"; do
+            echo -e "    ${CYAN}→${NC} $f"
+        done
+    fi
+
+    # Discover .htaccess files (store paths for route extraction)
+    while IFS= read -r -d '' file; do
+        DISCOVERED_HTACCESS_FILES+=("$file")
+    done < <(find "$PROJECT_ROOT" -type f -name ".htaccess" -print0 2>/dev/null)
+
+    if [ ${#DISCOVERED_HTACCESS_FILES[@]} -gt 0 ]; then
+        echo -e "  ${GREEN}✓${NC} Found ${#DISCOVERED_HTACCESS_FILES[@]} .htaccess file(s):"
+        for f in "${DISCOVERED_HTACCESS_FILES[@]}"; do
+            echo -e "    ${CYAN}→${NC} $f"
+        done
+    fi
+
+    # Save discovered files to output for later reference
+    mkdir -p "$OUTPUT_DIR/analysis"
+    cat > "$OUTPUT_DIR/analysis/discovered_configs.json" << EOF
+{
+  "sql_files": $(printf '%s\n' "${DISCOVERED_SQL_FILES[@]}" | jq -R . | jq -s .),
+  "nginx_configs": $(printf '%s\n' "${DISCOVERED_NGINX_CONFIGS[@]}" | jq -R . | jq -s .),
+  "apache_configs": $(printf '%s\n' "${DISCOVERED_APACHE_CONFIGS[@]}" | jq -R . | jq -s .),
+  "htaccess_files": $(printf '%s\n' "${DISCOVERED_HTACCESS_FILES[@]}" | jq -R . | jq -s .),
+  "selected_sql_file": "$SQL_FILE",
+  "selected_nginx_config": "$NGINX_CONFIG"
+}
+EOF
+    echo ""
+    echo -e "  ${GREEN}✓${NC} Saved discovery results to: $OUTPUT_DIR/analysis/discovered_configs.json"
     echo ""
 
     if [ -n "$MISSING" ]; then
@@ -309,11 +541,13 @@ phase1_analysis() {
     echo -e "${GREEN}▶ PHASE 1: Legacy System Analysis${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "Analyzing PHP codebase (including security scan)..."
 
-    # Run legacy PHP analyzer
-    python3 "$SCRIPT_DIR/extract_legacy_php.py" "$PROJECT_ROOT" > "$OUTPUT_DIR/analysis/legacy_analysis.json"
-    python3 "$SCRIPT_DIR/extract_legacy_php.py" "$PROJECT_ROOT" --output markdown > "$OUTPUT_DIR/analysis/legacy_analysis.md"
+    # Run legacy PHP analyzer with timeout (300s = 5 min max)
+    run_with_spinner "Analyzing PHP codebase (JSON output)" 300 \
+        bash -c "python3 '$SCRIPT_DIR/extract_legacy_php.py' '$PROJECT_ROOT' > '$OUTPUT_DIR/analysis/legacy_analysis.json'" || exit 1
+
+    run_with_spinner "Generating analysis report (Markdown)" 120 \
+        bash -c "python3 '$SCRIPT_DIR/extract_legacy_php.py' '$PROJECT_ROOT' --output markdown > '$OUTPUT_DIR/analysis/legacy_analysis.md'" || exit 1
 
     # Summary
     if command -v jq &> /dev/null; then
@@ -340,18 +574,53 @@ phase1_analysis() {
 
     # Chunk large files
     echo ""
-    echo "  Checking for large files that need chunking..."
     mkdir -p "$OUTPUT_DIR/analysis/chunks"
 
     if command -v jq &> /dev/null; then
-        jq -r '.entry_points[]? | select(.total_lines > 400) | .relative_path' "$OUTPUT_DIR/analysis/legacy_analysis.json" | \
-            while read -r large_file; do
-                if [ -n "$large_file" ]; then
-                    BASENAME=$(basename "$large_file" .php)
-                    echo "    Chunking: $large_file"
-                    "$SCRIPT_DIR/chunk_legacy_php.sh" "$PROJECT_ROOT/$large_file" "$OUTPUT_DIR/analysis/chunks/$BASENAME" 400 2>/dev/null || true
-                fi
-            done
+        LARGE_FILES=$(jq -r '.entry_points[]? | select(.total_lines > 400) | .relative_path' "$OUTPUT_DIR/analysis/legacy_analysis.json" 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$LARGE_FILES" -gt 0 ]; then
+            echo -e "  ${CYAN}Chunking $LARGE_FILES large files...${NC}"
+            CHUNK_ERRORS=0
+            jq -r '.entry_points[]? | select(.total_lines > 400) | .relative_path' "$OUTPUT_DIR/analysis/legacy_analysis.json" | \
+                while read -r large_file; do
+                    if [ -n "$large_file" ]; then
+                        BASENAME=$(basename "$large_file" .php)
+                        if ! "$SCRIPT_DIR/chunk_legacy_php.sh" "$PROJECT_ROOT/$large_file" "$OUTPUT_DIR/analysis/chunks/$BASENAME" 400 2>/dev/null; then
+                            echo -e "    ${YELLOW}!${NC} Failed to chunk: $large_file"
+                            CHUNK_ERRORS=$((CHUNK_ERRORS + 1))
+                        else
+                            echo -e "    ${GREEN}✓${NC} Chunked: $large_file"
+                        fi
+                    fi
+                done
+            echo -e "  ${GREEN}✓${NC} Chunking complete"
+        else
+            echo -e "  ${GREEN}✓${NC} No files need chunking (all < 400 lines)"
+        fi
+    fi
+
+    # Generate compact architecture context for LLM consumption
+    echo ""
+    echo -e "  ${CYAN}Generating compact architecture context...${NC}"
+
+    CONTEXT_CMD="python3 $SCRIPT_DIR/generate_architecture_context.py"
+    CONTEXT_CMD="$CONTEXT_CMD -a $OUTPUT_DIR/analysis/legacy_analysis.json"
+
+    # Include routes if available (will be generated in Phase 2, but check anyway)
+    if [ -f "$OUTPUT_DIR/analysis/routes.json" ]; then
+        CONTEXT_CMD="$CONTEXT_CMD -r $OUTPUT_DIR/analysis/routes.json"
+    fi
+
+    CONTEXT_CMD="$CONTEXT_CMD -o $OUTPUT_DIR/analysis/architecture_context.json"
+
+    run_with_spinner "Generating architecture context" 60 \
+        bash -c "$CONTEXT_CMD" || {
+            echo -e "  ${YELLOW}⚠ Architecture context generation failed (non-fatal)${NC}"
+        }
+
+    if [ -f "$OUTPUT_DIR/analysis/architecture_context.json" ]; then
+        CONTEXT_SIZE=$(du -k "$OUTPUT_DIR/analysis/architecture_context.json" | cut -f1)
+        echo -e "  ${GREEN}✓${NC} Generated architecture_context.json (${CONTEXT_SIZE}KB)"
     fi
 
     echo ""
@@ -379,18 +648,31 @@ phase2_routes() {
 
     if [ -n "$NGINX_CONFIG" ] && [ -f "$NGINX_CONFIG" ]; then
         ROUTE_CMD="$ROUTE_CMD --nginx $NGINX_CONFIG"
-        echo "  Including Nginx configuration: $NGINX_CONFIG"
+        echo -e "  ${GREEN}✓${NC} Including nginx config: $NGINX_CONFIG"
+        if [ ${#DISCOVERED_NGINX_CONFIGS[@]} -gt 1 ]; then
+            echo -e "    ${YELLOW}Note:${NC} ${#DISCOVERED_NGINX_CONFIGS[@]} nginx configs found, using first one"
+        fi
+    fi
+
+    # Include all discovered Apache configs in output for reference
+    if [ ${#DISCOVERED_APACHE_CONFIGS[@]} -gt 0 ]; then
+        echo -e "  ${CYAN}ℹ${NC} Apache/httpd configs found (for manual review):"
+        for f in "${DISCOVERED_APACHE_CONFIGS[@]}"; do
+            echo -e "    ${CYAN}→${NC} $f"
+        done
     fi
 
     if [ "$INCLUDE_DIRECT_FILES" = true ]; then
         ROUTE_CMD="$ROUTE_CMD --include-direct-files"
-        echo "  Including directly accessible PHP files"
+        echo -e "  ${GREEN}✓${NC} Including directly accessible PHP files"
     fi
+    echo ""
 
-    echo "  Extracting routes..."
+    run_with_spinner "Extracting routes (JSON output)" 180 \
+        bash -c "$ROUTE_CMD > '$OUTPUT_DIR/analysis/routes.json'" || exit 1
 
-    eval "$ROUTE_CMD" > "$OUTPUT_DIR/analysis/routes.json"
-    eval "$ROUTE_CMD --output markdown" > "$OUTPUT_DIR/analysis/routes.md"
+    run_with_spinner "Generating routes report (Markdown)" 60 \
+        bash -c "$ROUTE_CMD --output markdown > '$OUTPUT_DIR/analysis/routes.md'" || exit 1
 
     if command -v jq &> /dev/null; then
         ROUTE_COUNT=$(jq '.routes | length // 0' "$OUTPUT_DIR/analysis/routes.json")
@@ -410,6 +692,18 @@ phase2_routes() {
             echo ""
             echo -e "  ${YELLOW}⚠ Route conflicts detected! Review route_conflicts in analysis output.${NC}"
         fi
+    fi
+
+    # Regenerate architecture context with routes included
+    if [ -f "$OUTPUT_DIR/analysis/legacy_analysis.json" ]; then
+        echo ""
+        run_with_spinner "Updating architecture context with routes" 60 \
+            python3 "$SCRIPT_DIR/generate_architecture_context.py" \
+                -a "$OUTPUT_DIR/analysis/legacy_analysis.json" \
+                -r "$OUTPUT_DIR/analysis/routes.json" \
+                -o "$OUTPUT_DIR/analysis/architecture_context.json" || {
+                    echo -e "  ${YELLOW}⚠ Context update failed (non-fatal)${NC}"
+                }
     fi
 
     echo ""
@@ -433,17 +727,27 @@ phase3_database() {
     echo ""
 
     if [ -n "$SQL_FILE" ] && [ -f "$SQL_FILE" ]; then
-        echo "  Extracting schema from SQL file: $SQL_FILE"
+        echo -e "  ${GREEN}✓${NC} Using SQL file: $SQL_FILE"
+        if [ ${#DISCOVERED_SQL_FILES[@]} -gt 1 ]; then
+            echo -e "    ${YELLOW}Note:${NC} ${#DISCOVERED_SQL_FILES[@]} SQL files found, using first one"
+            echo -e "    ${CYAN}All discovered SQL files:${NC}"
+            for f in "${DISCOVERED_SQL_FILES[@]}"; do
+                echo -e "      ${CYAN}→${NC} $f"
+            done
+        fi
+        echo ""
 
         # Generate TypeORM entities
         mkdir -p "$OUTPUT_DIR/database/entities"
-        python3 "$SCRIPT_DIR/extract_database.py" --sql-file "$SQL_FILE" --output "$OUTPUT_DIR/database/entities" --format typeorm
 
-        # Generate JSON schema
-        python3 "$SCRIPT_DIR/extract_database.py" --sql-file "$SQL_FILE" --format json > "$OUTPUT_DIR/database/schema.json"
+        run_with_spinner "Generating TypeORM entities" 120 \
+            python3 "$SCRIPT_DIR/extract_database.py" --sql-file "$SQL_FILE" --output "$OUTPUT_DIR/database/entities" --format typeorm || exit 1
 
-        # Generate markdown docs
-        python3 "$SCRIPT_DIR/extract_database.py" --sql-file "$SQL_FILE" --output "$OUTPUT_DIR/database" --format markdown
+        run_with_spinner "Generating JSON schema" 60 \
+            bash -c "python3 '$SCRIPT_DIR/extract_database.py' --sql-file '$SQL_FILE' --format json > '$OUTPUT_DIR/database/schema.json'" || exit 1
+
+        run_with_spinner "Generating documentation" 60 \
+            python3 "$SCRIPT_DIR/extract_database.py" --sql-file "$SQL_FILE" --output "$OUTPUT_DIR/database" --format markdown || exit 1
 
         if command -v jq &> /dev/null; then
             TABLE_COUNT=$(jq '.tables | keys | length // 0' "$OUTPUT_DIR/database/schema.json")
@@ -460,16 +764,23 @@ phase3_database() {
         # Generate from PHP analysis
         if [ -f "$OUTPUT_DIR/analysis/legacy_analysis.json" ]; then
             mkdir -p "$OUTPUT_DIR/database/entities"
-            python3 "$SCRIPT_DIR/extract_database.py" --from-analysis "$OUTPUT_DIR/analysis/legacy_analysis.json" --output "$OUTPUT_DIR/database/entities" --format typeorm
-            python3 "$SCRIPT_DIR/extract_database.py" --from-analysis "$OUTPUT_DIR/analysis/legacy_analysis.json" --format json > "$OUTPUT_DIR/database/schema_inferred.json"
 
-            echo ""
-            echo -e "  ${YELLOW}⚠ Schema inferred from SQL queries in code. May be incomplete.${NC}"
-            echo "  Provide --sql-file for complete schema extraction."
-            echo ""
+            run_with_spinner "Inferring TypeORM entities from code" 120 \
+                python3 "$SCRIPT_DIR/extract_database.py" --from-analysis "$OUTPUT_DIR/analysis/legacy_analysis.json" --output "$OUTPUT_DIR/database/entities" --format typeorm || {
+                    echo -e "  ${YELLOW}⚠ Entity inference failed (non-fatal)${NC}"
+                }
+
+            run_with_spinner "Generating inferred schema JSON" 60 \
+                bash -c "python3 '$SCRIPT_DIR/extract_database.py' --from-analysis '$OUTPUT_DIR/analysis/legacy_analysis.json' --format json > '$OUTPUT_DIR/database/schema_inferred.json'" || {
+                    echo -e "  ${YELLOW}⚠ Schema inference failed (non-fatal)${NC}"
+                }
+
+            echo -e "  ${YELLOW}⚠ Schema inferred from SQL queries in code - may be incomplete${NC}"
+            echo -e "  ${YELLOW}  Provide --sql-file for complete schema extraction${NC}"
             echo "  Output: $OUTPUT_DIR/database/schema_inferred.json"
         else
-            echo -e "  ${YELLOW}⚠ No analysis file found. Run phase 1 first.${NC}"
+            echo -e "  ${RED}✗ No analysis file found. Run phase 1 first.${NC}"
+            exit 1
         fi
     fi
 
@@ -495,20 +806,15 @@ phase4_design() {
     echo -e "${YELLOW}This phase requires AI assistance (Claude Code + Ralph Wiggum)${NC}"
     echo ""
 
-    # Prepare the design prompt with actual data
-    if [ -f "$OUTPUT_DIR/analysis/legacy_analysis.json" ] && [ -f "$OUTPUT_DIR/analysis/routes.json" ]; then
-        LEGACY_JSON=$(cat "$OUTPUT_DIR/analysis/legacy_analysis.json" | jq -c '.')
-        ROUTES_JSON=$(cat "$OUTPUT_DIR/analysis/routes.json" | jq -c '.')
+    # Copy the design prompt (it now references files directly instead of inline JSON)
+    cp "$TOOLKIT_ROOT/prompts/system_design_architect.md" "$OUTPUT_DIR/prompts/system_design_prompt.md"
 
-        # Create filled prompt
-        cat "$TOOLKIT_ROOT/prompts/system_design_architect.md" | \
-            sed "s|{{LEGACY_ANALYSIS_JSON}}|$LEGACY_JSON|g" | \
-            sed "s|{{ROUTES_JSON}}|$ROUTES_JSON|g" | \
-            sed "s|{{DATABASE_TABLES}}|See database/schema.json|g" | \
-            sed "s|{{BUSINESS_PROCESSES}}|Extracted from entry points|g" \
-            > "$OUTPUT_DIR/prompts/system_design_prompt.md"
+    # Verify required input files exist
+    if [ -f "$OUTPUT_DIR/analysis/architecture_context.json" ]; then
+        CONTEXT_SIZE=$(du -k "$OUTPUT_DIR/analysis/architecture_context.json" | cut -f1)
+        echo -e "  ${GREEN}✓${NC} Architecture context ready (${CONTEXT_SIZE}KB)"
     else
-        cp "$TOOLKIT_ROOT/prompts/system_design_architect.md" "$OUTPUT_DIR/prompts/system_design_prompt.md"
+        echo -e "  ${YELLOW}⚠${NC} architecture_context.json not found - Claude will read larger files"
     fi
 
     echo "  Prepared design prompt: $OUTPUT_DIR/prompts/system_design_prompt.md"

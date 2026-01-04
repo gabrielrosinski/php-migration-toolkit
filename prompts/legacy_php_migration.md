@@ -58,26 +58,32 @@ This is legacy PHP with:
 
 ## INPUT DATA
 
+**Source:** Extract this data from `output/analysis/architecture_context.json` for your target module/domain.
+
 **App:** {{APP_NAME}} (e.g., gateway)
 **Module:** {{MODULE_NAME}} (e.g., users)
 **Domain:** {{DOMAIN}}
 
 ### Legacy PHP Files
+From `architecture_context.json` → `files.by_domain[DOMAIN].files`
 ```
 {{LEGACY_PHP_FILES}}
 ```
 
 ### Routes (from .htaccess)
+From `architecture_context.json` → `routes.by_domain[DOMAIN].routes`
 ```
 {{HTACCESS_ROUTES}}
 ```
 
 ### Database Operations Found
+From `architecture_context.json` → `database_schema.tables` and `database_patterns`
 ```
 {{DB_OPERATIONS}}
 ```
 
 ### Security Issues Found (if any)
+From `architecture_context.json` → `security.by_type` (filter by files in this domain)
 ```
 {{SECURITY_ISSUES}}
 ```

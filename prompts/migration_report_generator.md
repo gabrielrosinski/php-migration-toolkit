@@ -10,13 +10,18 @@ Generate a complete set of migration reports that serve as the **single source o
 
 Before generating any reports, you MUST read and fully understand these files:
 
-### From Analysis Phase (Step 1):
-- `output/legacy_analysis.json` - Complete PHP code analysis
-- `output/legacy_analysis.md` - Human-readable analysis report
-- `output/routes.json` - Extracted routes from all sources
-- `output/routes_analysis.md` - Route documentation
-- `output/database_schema.json` - Database schema (if exists)
-- `output/entities/*.ts` - Generated TypeORM entities (if exist)
+### Primary Input (Start Here):
+- `output/analysis/architecture_context.json` - Comprehensive context (~128KB) containing ALL analysis data:
+  - Entry points, files with metrics, domains
+  - ALL routes with domain grouping
+  - ALL security issues grouped by type
+  - ALL database tables with columns
+  - Dependency graph, external APIs, globals
+
+### Additional Context (if needed):
+- `output/analysis/legacy_analysis.md` - Human-readable analysis report
+- `output/analysis/routes.md` - Route documentation
+- `output/database/entities/*.ts` - Generated TypeORM entities (if exist)
 
 ### From Architecture Design Phase (Step 2):
 - `ARCHITECTURE.md` - System architecture design document

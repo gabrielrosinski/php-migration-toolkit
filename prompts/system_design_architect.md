@@ -76,15 +76,17 @@ mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
 
 ## INPUT DATA
 
-### Legacy System Analysis
-```json
-{{LEGACY_ANALYSIS_JSON}}
-```
+**IMPORTANT: Read these files IN ORDER:**
 
-### Routes from .htaccess
-```json
-{{ROUTES_JSON}}
-```
+1. **`output/analysis/architecture_context.json`** - Comprehensive context (~128KB) ⬅️ READ THIS FIRST
+   - Contains ALL data you need: entry points, files with metrics, domains, routes, security issues, database tables with columns, dependency graph
+   - This single file replaces the need to read multiple large source files
+
+2. **`MICROSERVICES_PATTERNS.md`** - Architecture patterns reference
+
+3. **`output/analysis/legacy_analysis.md`** - Human-readable analysis summary (optional, for additional context)
+
+**Start by reading `output/analysis/architecture_context.json` now.**
 
 ---
 

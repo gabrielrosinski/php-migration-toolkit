@@ -45,21 +45,26 @@ Consult `MICROSERVICES_PATTERNS.md` when:
 
 ## INPUT DATA
 
+**Source:** Extract this data from `output/analysis/architecture_context.json` and `ARCHITECTURE.md`
+
 **App:** {{APP_NAME}} (e.g., gateway)
 **Module:** {{MODULE_NAME}}
 **Domain:** {{DOMAIN}}
 
 ### Responsibilities
+From `ARCHITECTURE.md` → module responsibilities
 ```
 {{RESPONSIBILITIES}}
 ```
 
 ### API Endpoints
+From `architecture_context.json` → `routes.by_domain[DOMAIN].routes`
 ```
 {{API_ENDPOINTS}}
 ```
 
 ### Data Tables
+From `architecture_context.json` → `database_schema.tables`
 ```
 {{DATA_TABLES}}
 ```

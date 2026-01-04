@@ -8,20 +8,28 @@ This is a **Legacy PHP to NestJS Migration Toolkit** that automates the analysis
 
 ## Key Commands
 
-### Analysis Phase (Automated)
+### Analysis Phase (Automated with Auto-Discovery)
 ```bash
-# Full analysis with all options
-./scripts/master_migration.sh /path/to/php-project ./output \
-  --sql-file schema.sql \
-  --nginx /etc/nginx/mysite \
+# Basic usage - auto-discovers SQL, nginx, .htaccess files
+./scripts/master_migration.sh /path/to/php-project -o ./output
+
+# Recommended - include directly accessible PHP files
+./scripts/master_migration.sh /path/to/php-project -o ./output --include-direct-files
+
+# Override auto-discovered files if needed
+./scripts/master_migration.sh /path/to/php-project -o ./output \
+  --sql-file /specific/schema.sql \
+  --nginx /specific/nginx.conf \
   --include-direct-files
 
 # Resume interrupted analysis
-./scripts/master_migration.sh /path/to/php-project ./output --resume
+./scripts/master_migration.sh /path/to/php-project -o ./output -r 3
 
 # Skip specific phases
-./scripts/master_migration.sh /path/to/php-project ./output --skip routes
+./scripts/master_migration.sh /path/to/php-project -o ./output -s 4,5
 ```
+
+**Auto-Discovery:** The script scans your project for `*.sql`, `*/nginx/*.conf`, `*/httpd/*.conf`, and `.htaccess` files automatically.
 
 ### Individual Analysis Scripts
 ```bash
@@ -33,6 +41,13 @@ python scripts/extract_routes.py <php_dir> --output routes.json --nginx /path/to
 
 # Database schema to TypeORM entities
 python scripts/extract_database.py --sql-file schema.sql --output-dir ./entities
+
+# Generate comprehensive LLM-optimized context (~128KB) from large analysis files
+python scripts/generate_architecture_context.py \
+  -a output/analysis/legacy_analysis.json \
+  -r output/analysis/routes.json \
+  -d output/database \
+  -o output/analysis/architecture_context.json
 
 # Chunk large PHP files for context limits
 ./scripts/chunk_legacy_php.sh huge_file.php ./chunks 400
@@ -79,6 +94,7 @@ migration-toolkit/
 │   ├── extract_legacy_php.py   # PHP analysis + security scanning
 │   ├── extract_routes.py       # Multi-source route extraction
 │   ├── extract_database.py     # SQL → TypeORM entity generation
+│   ├── generate_architecture_context.py  # Comprehensive LLM-optimized context
 │   └── chunk_legacy_php.sh     # Large file splitting
 ├── prompts/                    # AI prompts
 │   ├── system_design_architect.md    # [Single] Nx monorepo architecture design

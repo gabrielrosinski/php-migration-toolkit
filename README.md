@@ -42,11 +42,12 @@ This toolkit handles:
 ```
 migration-toolkit/
 ├── scripts/
-│   ├── master_migration.sh       # Orchestrates analysis phase
-│   ├── extract_legacy_php.py     # Analyzes PHP code + security scan
-│   ├── extract_routes.py         # Parses htaccess/nginx/PHP routes
-│   ├── extract_database.py       # Generates TypeORM entities from SQL
-│   └── chunk_legacy_php.sh       # Splits large files
+│   ├── master_migration.sh              # Orchestrates analysis phase
+│   ├── extract_legacy_php.py            # Analyzes PHP code + security scan
+│   ├── extract_routes.py                # Parses htaccess/nginx/PHP routes
+│   ├── extract_database.py              # Generates TypeORM entities from SQL
+│   ├── generate_architecture_context.py # Creates comprehensive LLM-optimized context
+│   └── chunk_legacy_php.sh              # Splits large files
 ├── prompts/
 │   ├── system_design_architect.md      # Architecture design (Nx monorepo)
 │   ├── nestjs_best_practices_research.md
@@ -147,42 +148,69 @@ claude mcp list
 
 ### Step 1: Analyze Your PHP Project
 
-Basic usage:
+Basic usage (auto-discovers SQL, nginx, and .htaccess files):
 ```bash
-./scripts/master_migration.sh /path/to/php-project ./output
+./scripts/master_migration.sh /path/to/php-project -o ./output
 ```
 
-With all options:
+With direct PHP file inclusion (recommended):
 ```bash
-./scripts/master_migration.sh /path/to/php-project ./output \
-  --sql-file /path/to/schema.sql \
-  --nginx /etc/nginx/sites-available/mysite \
+./scripts/master_migration.sh /path/to/php-project -o ./output --include-direct-files
+```
+
+With manual overrides (if auto-discovery picks wrong files):
+```bash
+./scripts/master_migration.sh /path/to/php-project -o ./output \
+  --sql-file /path/to/specific/schema.sql \
+  --nginx /path/to/specific/nginx.conf \
   --include-direct-files
 ```
 
+**Auto-Discovery:** The script automatically finds and uses:
+- SQL files (`*.sql`) - uses first found, or specify with `--sql-file`
+- Nginx configs (`*/nginx/*.conf`) - uses first found, or specify with `--nginx`
+- Apache/httpd configs (`*/httpd/*.conf`, `vhost.conf`) - listed for reference
+- `.htaccess` files - all included in route analysis
+
 This generates:
-- `output/legacy_analysis.json` - Code structure + security analysis
-- `output/legacy_analysis.md` - Human-readable report
-- `output/routes.json` - Extracted routes from all sources
-- `output/routes_analysis.md` - Route documentation
-- `output/database_schema.json` - Database schema (if SQL provided)
-- `output/entities/` - Generated TypeORM entities
+- `output/analysis/discovered_configs.json` - Auto-discovered config files
+- `output/analysis/legacy_analysis.json` - Code structure + security analysis
+- `output/analysis/legacy_analysis.md` - Human-readable report
+- `output/analysis/routes.json` - Extracted routes from all sources
+- `output/analysis/routes.md` - Route documentation
+- `output/analysis/architecture_context.json` - Comprehensive LLM-optimized context (~128KB)
+- `output/database/schema.json` - Database schema (if SQL found/provided)
+- `output/database/entities/` - Generated TypeORM entities
 - `output/prompts/system_design_prompt.md` - Ready-to-use prompt
 
-**Resuming interrupted analysis:**
+**Resuming from a specific phase:**
 ```bash
-./scripts/master_migration.sh /path/to/php-project ./output --resume
+# Resume from phase 3 (database extraction)
+./scripts/master_migration.sh /path/to/php-project -o ./output -r 3
 ```
 
 **Skipping phases:**
 ```bash
-./scripts/master_migration.sh /path/to/php-project ./output --skip routes
+# Skip phases 4 and 5 (design and research - manual steps)
+./scripts/master_migration.sh /path/to/php-project -o ./output -s 4,5
 ```
+
+**Phases:**
+- 0: Environment check + auto-discovery
+- 1: Legacy system analysis
+- 2: Route extraction
+- 3: Database schema extraction
+- 4-7: Manual AI-assisted steps (prepared prompts)
 
 ### Step 2: Design Architecture (Single Prompt)
 
+The analysis phase automatically generates `architecture_context.json` - a comprehensive (~128KB) context file containing ALL analysis data optimized for LLM consumption.
+
 ```bash
+# Use the auto-generated context with the design prompt
 claude "$(cat prompts/system_design_architect.md)"
+
+# The prompt will read from output/analysis/architecture_context.json
 ```
 
 **Output:** `ARCHITECTURE.md` with:
@@ -301,18 +329,28 @@ See [SYSTEM_FLOW.md](./SYSTEM_FLOW.md) for detailed workflow.
 
 ### master_migration.sh
 
-Orchestrates the analysis phase.
+Orchestrates the analysis phase with **automatic config file discovery**.
 
 ```bash
-./scripts/master_migration.sh <php_dir> <output_dir> [options]
+./scripts/master_migration.sh <php_dir> [options]
 
 Options:
-  -r, --resume              Resume from last completed phase
-  -s, --skip <phase>        Skip specific phase (php|routes|database)
-  --sql-file <path>         SQL schema file for entity generation
-  --nginx <path>            Nginx config file for route extraction
+  -o, --output <dir>        Output directory (default: ./migration-output)
+  -r, --resume <phase>      Resume from specific phase (0-6)
+  -s, --skip <phases>       Skip phases (comma-separated, e.g., 4,5)
+  --sql-file <path>         Override auto-discovered SQL file
+  --nginx <path>            Override auto-discovered nginx config
   --include-direct-files    Include direct PHP file access routes
-  --config <path>           Configuration file path
+  -c, --config <path>       Configuration file (YAML or shell)
+
+Auto-Discovery:
+  The script automatically scans the project for:
+  - *.sql files (uses first found for schema extraction)
+  - */nginx/*.conf, nginx.conf (uses first found for route extraction)
+  - */httpd/*.conf, vhost.conf (listed for reference)
+  - .htaccess files (all included in route analysis)
+
+  Use --sql-file or --nginx to override if wrong file is selected.
 ```
 
 ### extract_legacy_php.py
@@ -363,6 +401,31 @@ Options:
   --output-dir <path>       Output directory for entities
   --format json|entities|md Output format
 ```
+
+### generate_architecture_context.py
+
+Creates a comprehensive, LLM-optimized context from large analysis files (~128KB).
+
+```bash
+python scripts/generate_architecture_context.py [options]
+
+Options:
+  -a, --analysis <path>     Path to legacy_analysis.json (required)
+  -r, --routes <path>       Path to routes.json (optional)
+  -d, --database <path>     Path to database schema directory (optional)
+  -o, --output <path>       Output path (default: output/analysis/architecture_context.json)
+```
+
+**What gets included (ALL data):**
+- Project metadata and migration complexity
+- Entry points and recommended services
+- ALL security issues grouped by type (SQL injection, XSS, etc.)
+- ALL routes in compact format with domain grouping
+- ALL files with complexity metrics
+- ALL database tables with columns and relationships
+- Full dependency graph (who includes whom)
+- External API integrations
+- Global state and singletons
 
 ## Prompt Reference
 
@@ -425,6 +488,7 @@ Quick fixes:
 - **TypeORM errors**: Verify entity imports and module config
 - **Test failures**: Check mock setup and async handling
 - **Ralph loop stuck**: Review completion promise format
+- **macOS timeout issues**: Install coreutils (`brew install coreutils`) for `gtimeout`, or the script runs without timeouts
 
 ## License
 

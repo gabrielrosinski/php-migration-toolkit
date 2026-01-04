@@ -37,10 +37,12 @@ mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
 
 ## INPUT DATA
 
+**Source:** Extract security issues and file data from `output/analysis/architecture_context.json`
+
 **Service:** {{SERVICE_NAME}}
 **NestJS Path:** {{NESTJS_PATH}}
-**Legacy PHP Files:** {{LEGACY_PHP_FILES}}
-**Security Issues From Analysis:** {{SECURITY_ISSUES}}
+**Legacy PHP Files:** {{LEGACY_PHP_FILES}} *(from `architecture_context.json` → `files.by_domain`)*
+**Security Issues From Analysis:** {{SECURITY_ISSUES}} *(from `architecture_context.json` → `security.by_type`)*
 
 ---
 

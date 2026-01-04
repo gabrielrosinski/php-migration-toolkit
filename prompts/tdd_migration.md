@@ -49,7 +49,10 @@ Write Test → Run (FAIL) → Write Code → Run (PASS) → Refactor → Repeat
 
 ## INPUT DATA
 
+**Source:** Identify target files from `output/analysis/architecture_context.json` → `files.by_domain`
+
 ### Legacy PHP Code
+Read the actual PHP file for the function/behavior you're migrating:
 ```php
 {{LEGACY_PHP_CODE}}
 ```
