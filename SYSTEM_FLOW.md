@@ -60,18 +60,23 @@ Reality:
 │                        MIGRATION WORKFLOW                            │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│  STEP 1: ANALYSIS (Automated - No Ralph)                            │
-│  ═══════════════════════════════════════                            │
+│  STEP 1: ANALYSIS (Fully Automated - Single Command)                │
+│  ═══════════════════════════════════════════════════                │
 │                                                                      │
-│  $ ./scripts/master_migration.sh /php-project ./output \            │
-│      --sql-file schema.sql --nginx /etc/nginx/mysite                │
+│  $ ./scripts/master_migration.sh /php-project -o ./output           │
+│                                                                      │
+│  This SINGLE COMMAND runs 8 phases automatically:                   │
+│                                                                      │
+│  Phase 0: Environment Check + Auto-Discovery                        │
+│  ├── Validates Python, Node, Nx prerequisites                       │
+│  ├── Auto-discovers: *.sql, nginx.conf, .htaccess                  │
+│  └── Auto-discovers: Git submodules (from .gitmodules)              │
 │                                                                      │
 │  Phase 1: PHP Code Analysis                                          │
 │  ├── Functions, classes, includes                                    │
 │  ├── Database operations                                             │
 │  ├── Security vulnerabilities (SQL injection, XSS, etc.)            │
 │  ├── Complexity metrics                                              │
-│  ├── Configuration values                                            │
 │  └── External API calls                                              │
 │                                                                      │
 │  Phase 2: Route Extraction                                           │
@@ -80,21 +85,45 @@ Reality:
 │  ├── PHP-based routing (switch/case, routers)                       │
 │  └── Conflict detection                                              │
 │                                                                      │
-│  Phase 3: Database Schema (if --sql-file provided)                  │
+│  Phase 3: Database Schema                                            │
 │  ├── TypeORM entities from SQL                                       │
 │  ├── Schema inference from PHP queries                               │
 │  └── Entity generation in output/entities/                           │
 │                                                                      │
-│  Outputs:                                                            │
-│  ├── legacy_analysis.json  (code + security analysis)               │
-│  ├── legacy_analysis.md    (human-readable report)                  │
-│  ├── routes.json           (all extracted routes)                   │
-│  ├── routes_analysis.md    (route documentation)                    │
-│  ├── database_schema.json  (if SQL provided)                        │
-│  ├── entities/             (generated TypeORM entities)             │
-│  └── prompts/system_design_prompt.md (ready to use)                 │
+│  Phase 4: Submodule Extraction (AUTOMATIC if submodules exist)      │
+│  ├── Analyzes each discovered git submodule                         │
+│  ├── Detects call points: main project → submodule                  │
+│  ├── Preserves input/output contracts                               │
+│  ├── Analyzes database table ownership                              │
+│  ├── Generates Prometheus metrics configuration                     │
+│  ├── Creates shared DTO libraries                                   │
+│  ├── Generates resilience configs (circuit breaker, retry)          │
+│  └── Creates LLM-optimized service_context.json                     │
 │                                                                      │
-│  Resume support: ./scripts/master_migration.sh ... --resume         │
+│  Phase 5: NestJS Best Practices Research (BEFORE design)            │
+│  Phase 6: System Design guidance                                     │
+│  Phases 7-8: Service generation & testing guidance                   │
+│                                                                      │
+│  Outputs:                                                            │
+│  ├── analysis/                                                       │
+│  │   ├── legacy_analysis.json  (code + security)                    │
+│  │   ├── routes.json           (all routes)                         │
+│  │   ├── discovered_configs.json (auto-discovered files)            │
+│  │   └── extracted_services.json (submodule manifest)               │
+│  ├── database/                                                       │
+│  │   ├── schema.json           (database schema)                    │
+│  │   └── entities/             (TypeORM entities)                   │
+│  ├── services/                 (if submodules found)                │
+│  │   └── {service-name}/       (per extracted service)              │
+│  │       ├── analysis/service_context.json                          │
+│  │       ├── contracts/service_contract.json                        │
+│  │       ├── data/data_ownership.json                               │
+│  │       ├── observability/prometheus_metrics.yaml                  │
+│  │       └── resilience/health_checks.json                          │
+│  └── prompts/system_design_prompt.md                                │
+│                                                                      │
+│  Resume: ./scripts/master_migration.sh ... -r 3                     │
+│  Skip:   ./scripts/master_migration.sh ... -s 4,5                   │
 │                                                                      │
 │                              │                                       │
 │                              ▼                                       │
@@ -148,7 +177,7 @@ Reality:
 │  STEP 3: MODULE MIGRATION (One Loop Per Module)                     │
 │  ═══════════════════════════════════════════════                    │
 │                                                                      │
-│  For each module in the architecture:                               │
+│  For main project modules (in gateway):                             │                               │
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────┐    │
 │  │ $ /ralph-loop "Migrate [module-name]..." \                 │    │
@@ -174,6 +203,29 @@ Reality:
 │  │ - include/require → Module imports                         │    │
 │  │                                                            │    │
 │  │ Typical iterations: 10-25                                  │    │
+│  └────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  For extracted submodules (separate microservices):                 │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────┐    │
+│  │ $ /ralph-loop "$(cat prompts/extract_service.md)" \        │    │
+│  │     --context output/services/auth-service/analysis/ \     │    │
+│  │         service_context.json \                             │    │
+│  │     --completion-promise "SERVICE_COMPLETE" \              │    │
+│  │     --max-iterations 60                                    │    │
+│  │                                                            │    │
+│  │ Claude reads service_context.json and implements:          │    │
+│  │ - NestJS microservice with TCP transport                   │    │
+│  │ - Message patterns matching original PHP calls             │    │
+│  │ - Request/Response DTOs preserving contract                │    │
+│  │ - TypeORM entities for owned tables                        │    │
+│  │ - Health check endpoints                                   │    │
+│  │ - Prometheus metrics                                       │    │
+│  │ - Unit and contract tests                                  │    │
+│  │                                                            │    │
+│  │ Critical: Preserves exact input/output contract!           │    │
+│  │                                                            │    │
+│  │ Typical iterations: 15-30                                  │    │
 │  └────────────────────────────────────────────────────────────┘    │
 │                              │                                       │
 │                              ▼                                       │
@@ -249,6 +301,73 @@ Ralph loops needed:
 
 Total: 9 Ralph loops
 Total iterations: ~140 (not 9×60=540!)
+```
+
+## Example: Project with Git Submodules → Microservices
+
+```
+Project has: main app + auth submodule + payments submodule
+
+SINGLE COMMAND - Analyzes everything including submodules:
+$ ./scripts/master_migration.sh /php-project -o ./output
+
+Phase 4 automatically:
+✓ Discovers modules/auth and modules/payments from .gitmodules
+✓ Analyzes each submodule's PHP code
+✓ Detects all calls from main project → submodules
+✓ Preserves input/output contracts
+✓ Generates service artifacts in output/services/
+
+Output after analysis:
+├── output/analysis/
+│   ├── legacy_analysis.json
+│   ├── routes.json
+│   └── extracted_services.json  ← Lists auth-service, payments-service
+└── output/services/
+    ├── auth-service/
+    │   ├── analysis/service_context.json
+    │   ├── contracts/service_contract.json
+    │   └── ...
+    └── payments-service/
+        └── ...
+
+Nx Structure (after migration):
+├── apps/
+│   ├── gateway/src/           # Main project modules
+│   │   ├── product/
+│   │   ├── cart/
+│   │   └── order/
+│   ├── auth-service/          # Extracted from modules/auth
+│   └── payments-service/      # Extracted from modules/payments
+└── libs/
+    ├── shared-dto/
+    ├── database/
+    ├── common/
+    └── contracts/
+        ├── auth-service/      # DTOs + patterns
+        └── payments-service/
+
+Ralph loops needed:
+├── 1× System Design          (~20 iterations) ← auto-includes extracted services
+├── 1× auth-service           (~25 iterations) ← uses extract_service.md
+├── 1× auth validation        (~12 iterations)
+├── 1× payments-service       (~25 iterations) ← uses extract_service.md
+├── 1× payments validation    (~12 iterations)
+├── 1× gateway (main app)     (~30 iterations) ← updates calls to use ClientProxy
+├── 1× gateway validation     (~15 iterations)
+├── 1× product module         (~18 iterations)
+├── 1× cart module            (~15 iterations)
+└── 1× order module           (~20 iterations)
+
+Total: 10 Ralph loops
+Total iterations: ~190
+
+Key difference from monolithic:
+- Submodule services use TCP transport
+- Gateway uses ClientProxy to call services
+- Shared DTOs in libs/contracts/{service}/
+- Each service has its own database connection
+- Contract tests verify service boundaries
 ```
 
 ## Analysis Phase Details

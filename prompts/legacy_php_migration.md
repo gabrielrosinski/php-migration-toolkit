@@ -563,6 +563,106 @@ include 'templates/header.php';
 export class AppModule {}
 ```
 
+### Submodule Calls to ClientProxy (Microservices)
+
+When a PHP submodule was extracted as a separate microservice, replace direct calls with ClientProxy:
+
+```php
+// Legacy PHP (calling submodule):
+require_once 'modules/auth/User.php';
+
+$user = new User();
+$userData = $user->getById($userId);
+$isValid = User::validateToken($token);
+```
+
+```typescript
+// NestJS: ClientProxy for microservice calls
+import { ClientProxy } from '@nestjs/microservices';
+import { PATTERNS, GetUserRequest, GetUserResponse } from '@contracts/auth-service';
+
+@Injectable()
+export class AuthClient {
+  constructor(
+    @Inject('AUTH_SERVICE') private readonly client: ClientProxy,
+  ) {}
+
+  async onModuleInit() {
+    await this.client.connect();
+  }
+
+  // Replaces: $user->getById($userId)
+  async getUser(userId: number): Promise<GetUserResponse> {
+    return this.client.send<GetUserResponse>(
+      PATTERNS.AUTH_USER_GET,
+      { userId }
+    ).toPromise();
+  }
+
+  // Replaces: User::validateToken($token)
+  async validateToken(token: string): Promise<boolean> {
+    return this.client.send<boolean>(
+      PATTERNS.AUTH_TOKEN_VALIDATE,
+      { token }
+    ).toPromise();
+  }
+}
+
+// Module registration:
+@Module({
+  imports: [
+    ClientsModule.register([
+      {
+        name: 'AUTH_SERVICE',
+        transport: Transport.TCP,
+        options: {
+          host: process.env.AUTH_SERVICE_HOST || 'localhost',
+          port: parseInt(process.env.AUTH_SERVICE_PORT || '3001'),
+        },
+      },
+    ]),
+  ],
+  providers: [AuthClient],
+  exports: [AuthClient],
+})
+export class AuthClientModule {}
+```
+
+**Using the client in your service:**
+
+```typescript
+@Injectable()
+export class OrderService {
+  constructor(
+    private readonly authClient: AuthClient,
+    @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
+  ) {}
+
+  async createOrder(userId: number, dto: CreateOrderDto): Promise<Order> {
+    // Call auth microservice instead of direct User class
+    const user = await this.authClient.getUser(userId);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const order = this.orderRepo.create({
+      userId: user.id,
+      ...dto,
+    });
+
+    return this.orderRepo.save(order);
+  }
+}
+```
+
+**Check for migration_mapping.json:**
+
+If the submodule was extracted using `extract_submodules.sh`, check `output/services/{service}/contracts/migration_mapping.json` for:
+- Exact method-to-pattern mappings
+- Request/Response DTO names
+- Files that need updating
+
 ### Raw SQL to QueryBuilder
 
 For complex queries, use QueryBuilder:

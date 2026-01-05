@@ -78,7 +78,42 @@ mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
 
 **IMPORTANT: Read these files IN ORDER:**
 
-### Architecture Context (4 files, ~113KB total)
+### 1. Knowledge Sources (MUST READ FIRST!)
+
+**Read BOTH files before making any design decisions:**
+
+#### A. `NESTJS_BEST_PRACTICES.md` - Research from Phase 5
+- **Contains NestJS implementation patterns you MUST follow**
+- Communication patterns (transport options, request-response, events)
+- Module architecture (structure, DI, configuration)
+- Data management (TypeORM, repositories, transactions)
+- Security (JWT, guards, RBAC)
+- Resilience (error handling, circuit breakers)
+- Observability (health checks, logging)
+
+⚠️ **If this file doesn't exist, STOP and ask the user to run Phase 5 (best practices research) first.**
+
+#### B. `MICROSERVICES_PATTERNS.md` - Architecture Patterns Reference
+- **Contains architectural patterns for service decomposition**
+- Strangler Fig Pattern (incremental migration)
+- Anti-Corruption Layer (legacy integration)
+- Database per Service (data ownership)
+- API Gateway (routing, auth)
+- Saga Pattern (distributed transactions)
+- Circuit Breaker (resilience)
+- Service decomposition guidelines
+- Anti-patterns to avoid
+
+**How to use both:**
+| Decision Type | Primary Source |
+|---------------|----------------|
+| NestJS code patterns (guards, pipes, DTOs) | NESTJS_BEST_PRACTICES.md |
+| Service boundaries & decomposition | MICROSERVICES_PATTERNS.md |
+| Transport selection (TCP, gRPC, events) | Both (implementation + when to use) |
+| Data ownership & cross-service communication | MICROSERVICES_PATTERNS.md |
+| Resilience implementation | Both (patterns + NestJS code) |
+
+### 2. Architecture Context (4 files, ~113KB total)
 Read ALL 4 files to get the complete picture:
 
 1. **`output/analysis/architecture_context.json`** - Core context (~15KB)
@@ -93,12 +128,18 @@ Read ALL 4 files to get the complete picture:
 4. **`output/analysis/architecture_security_db.json`** - Security & Database (~35KB)
    - ALL security issues grouped by type, database schema with all tables/columns, external APIs
 
-### Reference Documents
-5. **`MICROSERVICES_PATTERNS.md`** - Architecture patterns reference
+### 3. Extracted Services Manifest (REQUIRED if it exists)
+**`output/analysis/extracted_services.json`** - Pre-extracted microservices
+- **If this file exists, you MUST include these services in your design**
+- Each extracted service becomes a separate NestJS microservice app
+- The manifest contains: service names, owned tables, message patterns, endpoints count
+- Read detailed contracts from paths specified in the manifest
 
-6. **`output/analysis/legacy_analysis.md`** - Human-readable analysis summary (optional)
+### 4. Reference Documents
+- **`MICROSERVICES_PATTERNS.md`** - Architecture patterns reference
+- **`output/analysis/legacy_analysis.md`** - Human-readable analysis summary (optional)
 
-**Start by reading all 4 architecture context files now.**
+**Start by reading NESTJS_BEST_PRACTICES.md, then architecture context files, then extracted services manifest.**
 
 ---
 
@@ -330,6 +371,130 @@ libs/
 
 ---
 
+## EXTRACTED SUBMODULES AS MICROSERVICES (Auto-Detected)
+
+**CRITICAL:** If `output/analysis/extracted_services.json` exists, you MUST incorporate those services into your architecture.
+
+### Step 1: Check for Extracted Services Manifest
+
+```bash
+# Read this file first if it exists:
+output/analysis/extracted_services.json
+```
+
+The manifest contains:
+```json
+{
+  "services": [
+    {
+      "service_name": "auth-service",
+      "source_submodule": "modules/auth",
+      "transport": "tcp",
+      "endpoints_count": 12,
+      "owned_tables": ["users", "sessions"],
+      "message_patterns": ["auth.user.get", "auth.session.create"],
+      "paths": {
+        "service_context": "services/auth-service/analysis/service_context.json",
+        "service_contract": "services/auth-service/contracts/service_contract.json"
+      }
+    }
+  ]
+}
+```
+
+### Step 2: Read Detailed Service Data
+
+For each service in the manifest, read:
+```
+output/services/{service-name}/
+├── analysis/
+│   └── service_context.json    # Full implementation context
+├── contracts/
+│   ├── service_contract.json   # API endpoints and DTOs
+│   └── call_contract.json      # Input/output preservation
+└── data/
+    └── data_ownership.json     # Tables this service owns
+```
+
+### Multi-Service Architecture (When Submodules Exist)
+
+```
+apps/
+  gateway/              # Main HTTP API (uses ClientProxy for service calls)
+  auth-service/         # Extracted submodule (TCP microservice)
+  payments-service/     # Extracted submodule (TCP microservice)
+libs/
+  shared-dto/           # Shared types
+  database/             # Main app entities
+  contracts/
+    auth-service/       # DTOs + patterns for auth-service
+    payments-service/   # DTOs + patterns for payments-service
+```
+
+### Document Service Communication
+
+For each extracted submodule, document:
+
+```yaml
+Microservice: auth-service
+  Transport: TCP (port 3001)
+  Source: output/services/auth-service/contracts/service_contract.json
+
+  Message Patterns:
+    - auth.user.get → GetUserRequest → GetUserResponse
+    - auth.session.create → CreateSessionRequest → CreateSessionResponse
+
+  Data Owned:
+    - users table
+    - sessions table
+
+  Called By: gateway (via ClientProxy)
+
+  Resilience:
+    - Timeout: 5000ms
+    - Retry: 3 attempts
+    - Circuit Breaker: enabled
+```
+
+### Gateway ClientProxy Setup
+
+Document how gateway calls the microservices:
+
+```typescript
+// apps/gateway/src/clients/auth.client.ts
+@Injectable()
+export class AuthClient {
+  constructor(
+    @Inject('AUTH_SERVICE') private readonly client: ClientProxy,
+  ) {}
+
+  async getUser(userId: number): Promise<GetUserResponse> {
+    return this.client.send(PATTERNS.AUTH_USER_GET, { userId }).toPromise();
+  }
+}
+```
+
+### Contract Preservation (CRITICAL)
+
+When submodules are extracted, the **input/output contract MUST be preserved**:
+
+```yaml
+Contract Preservation:
+  Original PHP:
+    - User::getById($id) returns { id, email, name }
+
+  New Microservice:
+    - Pattern: auth.user.get
+    - Request: { userId: number }
+    - Response: { id, email, name }  # SAME fields!
+
+  Gateway Migration:
+    Before: $user = new User(); $user->getById($id);
+    After:  this.authClient.getUser(id);
+```
+
+---
+
 ## WORK INCREMENTALLY
 
 Work through each section. Create files as you go.
@@ -547,12 +712,22 @@ Create a file `ARCHITECTURE.md` with:
 |-----|------|---------|------|---------------|
 | gateway | HTTP API | users, orders, products | 3000 | Main entry point |
 
+### Extracted Microservices (from submodules)
+*Only include if `extracted_services.json` exists*
+
+| Service | Source Submodule | Transport | Port | Owned Tables |
+|---------|------------------|-----------|------|--------------|
+| auth-service | modules/auth | TCP | 3001 | users, sessions |
+| payments-service | modules/payments | TCP | 3002 | payments, transactions |
+
 ### Libs
 | Lib | Purpose | Used By |
 |-----|---------|---------|
 | shared-dto | Shared types, DTOs | all apps |
-| database | Entities, migrations | all apps |
+| database | Entities, migrations | gateway |
 | common | Guards, utils | all apps |
+| contracts/auth-service | DTOs + patterns for auth | gateway, auth-service |
+| contracts/payments-service | DTOs + patterns for payments | gateway, payments-service |
 
 ### Folder Structure
 \`\`\`
@@ -706,6 +881,80 @@ SECRETS_PROVIDER=env|vault|k8s|cloud
 ## 11. Migration Plan
 | Priority | Module/App | Legacy Files | Risk | Dependencies |
 |----------|------------|--------------|------|--------------|
+
+## 12. Patterns & Best Practices Applied
+
+**This section documents how design decisions align with the knowledge sources.**
+
+### A. Microservices Patterns Applied (from MICROSERVICES_PATTERNS.md)
+
+#### Migration Strategy
+| Decision | Pattern Applied | Rationale |
+|----------|----------------|-----------|
+| Incremental migration | Strangler Fig Pattern | [Why this fits our case] |
+| Legacy integration | Anti-Corruption Layer | [How we isolate from legacy] |
+
+#### Service Design
+| Decision | Pattern Applied | Rationale |
+|----------|----------------|-----------|
+| Service X boundary | [Bounded Context] | [Why these capabilities together] |
+| Data ownership | Database per Service | [Which tables each service owns] |
+| Service size | Right-sizing guidelines | [1 team, N tables, clear context] |
+
+#### Communication
+| Decision | Pattern Applied | Rationale |
+|----------|----------------|-----------|
+| User queries | Sync (TCP/HTTP) | Needs immediate response |
+| Order → Inventory | Async (Events) | Decoupling, eventual consistency |
+| Distributed transactions | Saga Pattern (Choreography/Orchestration) | [If applicable] |
+
+#### Anti-Patterns Avoided
+| Anti-Pattern | How We Avoided It |
+|--------------|-------------------|
+| Distributed Monolith | [Explanation] |
+| Shared Database | [Explanation] |
+| Premature Decomposition | [Explanation] |
+
+### B. NestJS Best Practices Applied (from NESTJS_BEST_PRACTICES.md)
+
+#### Communication Implementation
+| Decision | Best Practice Applied | Reference |
+|----------|----------------------|-----------|
+| TCP transport setup | [From research] | NESTJS_BEST_PRACTICES.md Section 1 |
+| Message patterns | [From research] | NESTJS_BEST_PRACTICES.md Section 1 |
+
+#### Module Architecture
+| Decision | Best Practice Applied | Reference |
+|----------|----------------------|-----------|
+| Feature-based modules | [From research] | NESTJS_BEST_PRACTICES.md Section 2 |
+| ConfigModule setup | [From research] | NESTJS_BEST_PRACTICES.md Section 2 |
+
+#### Data Management
+| Decision | Best Practice Applied | Reference |
+|----------|----------------------|-----------|
+| TypeORM async config | [From research] | NESTJS_BEST_PRACTICES.md Section 3 |
+| Repository pattern | [From research] | NESTJS_BEST_PRACTICES.md Section 3 |
+| Transaction handling | [From research] | NESTJS_BEST_PRACTICES.md Section 3 |
+
+#### Security
+| Decision | Best Practice Applied | Reference |
+|----------|----------------------|-----------|
+| JWT strategy | [From research] | NESTJS_BEST_PRACTICES.md Section 4 |
+| Guard implementation | [From research] | NESTJS_BEST_PRACTICES.md Section 4 |
+| RBAC approach | [From research] | NESTJS_BEST_PRACTICES.md Section 4 |
+
+#### Resilience
+| Decision | Best Practice Applied | Reference |
+|----------|----------------------|-----------|
+| Global exception filter | [From research] | NESTJS_BEST_PRACTICES.md Section 5 |
+| Circuit breaker | [From research] | NESTJS_BEST_PRACTICES.md Section 5 |
+| Retry policy | [From research] | NESTJS_BEST_PRACTICES.md Section 5 |
+
+#### Observability
+| Decision | Best Practice Applied | Reference |
+|----------|----------------------|-----------|
+| Health check endpoints | [From research] | NESTJS_BEST_PRACTICES.md Section 6 |
+| Structured logging | [From research] | NESTJS_BEST_PRACTICES.md Section 6 |
 ```
 
 ---
@@ -713,22 +962,49 @@ SECRETS_PROVIDER=env|vault|k8s|cloud
 ## VERIFICATION
 
 Before completing, verify:
+
+### Microservices Patterns Applied (From MICROSERVICES_PATTERNS.md)
+- [ ] **Migration approach justified** - Strangler Fig / Big Bang with rationale from patterns doc
+- [ ] **Service boundaries follow guidelines** - Right-sized services (1 team, 1-3 tables, clear context)
+- [ ] **Data ownership is clear** - Database per Service pattern applied, no shared DB
+- [ ] **Communication patterns match use cases** - Sync for queries, Async for events (per patterns doc)
+- [ ] **Anti-patterns avoided** - No distributed monolith, no CRUD services, no premature decomposition
+- [ ] **Saga pattern applied if needed** - Distributed transactions handled correctly
+
+### NestJS Best Practices Applied (From NESTJS_BEST_PRACTICES.md)
+- [ ] **Transport implementation correct** - TCP/Redis/RabbitMQ setup matches research
+- [ ] **Module architecture follows researched patterns** - Structure matches best practices
+- [ ] **TypeORM setup uses recommended approach** - Async config, repository pattern as researched
+- [ ] **Security implementation matches research** - JWT strategy, guards, RBAC as documented
+- [ ] **Resilience code patterns applied** - Error handling, circuit breakers as researched
+- [ ] **Observability follows best practices** - Health checks, logging as documented
+
+### API & Data Integrity
 - [ ] **API routes are IDENTICAL to legacy** (no renaming, no restructuring)
 - [ ] **Response formats are IDENTICAL to legacy** (same JSON structure)
+- [ ] All legacy routes mapped to modules/apps
+- [ ] All database tables assigned to exactly one app
+
+### Infrastructure
 - [ ] **Infrastructure is CLOUD-AGNOSTIC** (no AWS/Azure/GCP specific services named)
 - [ ] **No provider-specific code** (no @aws-sdk, @azure, @google-cloud imports)
 - [ ] **Generic service types used** (Load Balancer, not ALB; Object Storage, not S3)
-- [ ] All legacy routes mapped to modules/apps
-- [ ] All database tables assigned to exactly one app
+- [ ] Infrastructure requirements documented with self-hosted options
+
+### Structure & Organization
+- [ ] **Extracted services included** (if `extracted_services.json` exists, ALL services are in the design)
+- [ ] **Extracted service tables correctly assigned** (owned_tables from manifest go to that service)
 - [ ] Nx structure is as simple as possible (prefer modules over separate apps)
 - [ ] Shared code properly placed in libs/
+- [ ] Contract libraries created for each extracted service (libs/contracts/{service})
 - [ ] Nx setup commands are complete and correct
+
+### Documentation
 - [ ] Migration priority order makes sense
 - [ ] Authentication strategy is clearly defined
 - [ ] Data migration approach is documented
 - [ ] Global state mapping covers all PHP patterns found
 - [ ] Security issues from analysis are addressed in design
-- [ ] Infrastructure requirements documented with self-hosted options
 
 ---
 

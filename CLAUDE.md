@@ -8,28 +8,31 @@ This is a **Legacy PHP to NestJS Migration Toolkit** that automates the analysis
 
 ## Key Commands
 
-### Analysis Phase (Automated with Auto-Discovery)
+### Analysis Phase (Fully Automated - Single Command)
 ```bash
-# Basic usage - auto-discovers SQL, nginx, .htaccess files
+# Analyze everything: PHP code, routes, database, AND git submodules
 ./scripts/master_migration.sh /path/to/php-project -o ./output
 
-# Recommended - include directly accessible PHP files
+# Include directly accessible PHP files in route analysis
 ./scripts/master_migration.sh /path/to/php-project -o ./output --include-direct-files
 
 # Override auto-discovered files if needed
 ./scripts/master_migration.sh /path/to/php-project -o ./output \
   --sql-file /specific/schema.sql \
-  --nginx /specific/nginx.conf \
-  --include-direct-files
+  --nginx /specific/nginx.conf
 
 # Resume interrupted analysis
 ./scripts/master_migration.sh /path/to/php-project -o ./output -r 3
 
-# Skip specific phases
+# Skip specific phases (0-8)
 ./scripts/master_migration.sh /path/to/php-project -o ./output -s 4,5
 ```
 
-**Auto-Discovery:** The script scans your project for `*.sql`, `*/nginx/*.conf`, `*/httpd/*.conf`, and `.htaccess` files automatically.
+**Auto-Discovery (No Flags Required):**
+- `*.sql` files → Database schema extraction
+- `*/nginx/*.conf`, `.htaccess` → Route extraction
+- **Git submodules → Automatically extracted as NestJS microservices**
+- PHP include/require patterns → Dependency mapping
 
 ### Individual Analysis Scripts
 ```bash
@@ -76,6 +79,59 @@ claude "$(cat prompts/migration_report_generator.md)"
   --completion-promise "VALIDATION_COMPLETE" --max-iterations 40
 ```
 
+### Submodule Extraction (Automatic)
+
+Git submodules are **automatically detected and extracted** during the main analysis. No separate command needed.
+
+**Phase 4 of `master_migration.sh` automatically:**
+1. Discovers all git submodules from `.gitmodules`
+2. Analyzes each submodule's PHP code
+3. Detects call points from main project → submodule
+4. Preserves input/output contracts
+5. Analyzes database table ownership
+6. Generates Prometheus metrics configuration
+7. Creates shared DTO libraries
+
+**Output Structure (per extracted service):**
+```
+output/services/{service-name}/
+├── analysis/
+│   ├── legacy_analysis.json     # PHP code analysis
+│   └── service_context.json     # LLM-optimized context for implementation
+├── contracts/
+│   ├── call_contract.json       # Input/output preservation
+│   ├── service_contract.json    # API endpoints + message patterns
+│   └── migration_mapping.json   # Code replacement guide
+├── data/
+│   └── data_ownership.json      # Which tables this service owns
+├── observability/
+│   ├── prometheus_metrics.yaml  # Metrics to export
+│   └── performance_analysis.json
+├── resilience/
+│   ├── circuit_breaker.json     # Resilience configuration
+│   └── health_checks.json       # Kubernetes probes
+└── shared-lib/                  # Shared DTOs for Nx lib
+```
+
+**Services Manifest:** `output/analysis/extracted_services.json` lists all extracted services with their metadata.
+
+### Implement Extracted Microservice (Ralph Wiggum Loop)
+```bash
+# After Nx workspace is created, implement each extracted service
+/ralph-loop "$(cat prompts/extract_service.md)" \
+  --context output/services/auth-service/analysis/service_context.json \
+  --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+```
+
+### Manual Submodule Extraction (Optional)
+If you need to re-extract specific submodules or use different transport:
+```bash
+./scripts/submodules/extract_submodules.sh /path/to/php-project \
+  --submodules "modules/auth,modules/payments" \
+  --output ./output \
+  --transport grpc  # or tcp (default), http
+```
+
 ### Nx Workspace Commands
 ```bash
 nx graph                                    # View dependency graph
@@ -98,11 +154,26 @@ migration-toolkit/
 │   ├── extract_routes.py       # Multi-source route extraction
 │   ├── extract_database.py     # SQL → TypeORM entity generation
 │   ├── generate_architecture_context.py  # Comprehensive LLM-optimized context
-│   └── chunk_legacy_php.sh     # Large file splitting
+│   ├── chunk_legacy_php.sh     # Large file splitting
+│   └── submodules/             # Submodule extraction scripts
+│       ├── extract_submodules.sh       # Main orchestration
+│       ├── validate_submodule.py       # Submodule validation
+│       ├── detect_call_points.py       # Find usage in main project
+│       ├── analyze_call_contract.py    # Input/output preservation
+│       ├── analyze_data_ownership.py   # Database table ownership
+│       ├── analyze_performance_impact.py # Prometheus metrics
+│       ├── generate_service_contract.py  # API endpoints
+│       ├── generate_shared_library.py    # Shared DTOs
+│       ├── generate_resilience_config.py # Circuit breaker, retry
+│       ├── generate_health_checks.py     # Health endpoints
+│       ├── generate_contract_tests.py    # Pact fixtures
+│       ├── generate_migration_mapping.py # Code replacement
+│       └── generate_service_context.py   # LLM context
 ├── prompts/                    # AI prompts
 │   ├── system_design_architect.md    # [Single] Nx monorepo architecture design
 │   ├── migration_report_generator.md # [Single] Comprehensive migration reports
 │   ├── legacy_php_migration.md       # [Loop] PHP → NestJS module migration
+│   ├── extract_service.md            # [Loop] Implement extracted microservice
 │   ├── generate_service.md           # [Loop] New service scaffolding
 │   ├── tdd_migration.md              # [Loop] Test-driven migration
 │   └── full_validation.md            # [Loop] Testing & validation
@@ -117,49 +188,80 @@ The toolkit produces:
 my-project/
 ├── apps/
 │   ├── gateway/              # HTTP API entry point
-│   └── <service>/            # Additional microservices (if needed)
+│   ├── auth-service/         # Extracted from modules/auth submodule
+│   └── payments-service/     # Extracted from modules/payments submodule
 ├── libs/
 │   ├── shared-dto/           # Shared DTOs, interfaces
 │   ├── database/             # TypeORM config & entities
-│   └── common/               # Shared utilities
+│   ├── common/               # Shared utilities
+│   └── contracts/            # Service contracts (per microservice)
+│       ├── auth-service/     # DTOs + patterns for auth-service
+│       └── payments-service/ # DTOs + patterns for payments-service
 └── nx.json
 ```
 
 ## Migration Workflow
 
-1. **Analysis Phase** (automated via `master_migration.sh`):
-   - Phase 1: PHP code analysis with security scanning
-   - Phase 2: Route extraction from .htaccess/nginx/PHP
-   - Phase 3: Database schema extraction → TypeORM entities
+### Step 1: Analyze Your PHP Project (Single Command)
+```bash
+./scripts/master_migration.sh /path/to/php-project -o ./output
+```
 
-2. **Architecture Design** (single prompt with `system_design_architect.md`):
-   - Outputs `ARCHITECTURE.md` with Nx apps/libs structure
+This single command runs **8 automated phases**:
+| Phase | Description |
+|-------|-------------|
+| 0 | Environment check + auto-discovery (configs, submodules) |
+| 1 | PHP code analysis with security scanning |
+| 2 | Route extraction from .htaccess/nginx/PHP |
+| 3 | Database schema → TypeORM entities |
+| **4** | **Submodule extraction → NestJS microservices** (automatic if submodules exist) |
+| 5 | NestJS best practices research (BEFORE design) |
+| 6 | System design guidance |
+| 7 | Service generation guidance |
+| 8 | Testing guidance |
 
-3. **Migration Reports** (single prompt with `migration_report_generator.md`):
-   - Generates comprehensive documentation in `reports/` folder
-   - **Phase 1 Reports**: Entities, security issues, endpoints, business logic, dependencies
-   - **Phase 2 Reports**: System overview, microservices design, API contracts, data ownership
-   - **Flowcharts**: Mermaid diagrams for architecture, data structures/ERD, data flows, auth, feature flows
+### Step 2: Architecture Design
+```bash
+claude "$(cat prompts/system_design_architect.md)"
+```
+- Reads analysis output including extracted services
+- Outputs `ARCHITECTURE.md` with Nx apps/libs structure
+- **Extracted submodules are automatically included as microservice apps**
 
-4. **Create Nx Workspace** (manual):
-   ```bash
-   npx create-nx-workspace@latest my-project --preset=nest
-   nx generate @nx/nest:library shared-dto
-   nx generate @nx/nest:library database
-   ```
+### Step 3: Create Nx Workspace
+```bash
+npx create-nx-workspace@latest my-project --preset=nest
+nx generate @nx/nest:library shared-dto
+nx generate @nx/nest:library database
+# For each extracted submodule:
+nx generate @nx/nest:application auth-service
+```
 
-5. **Service Migration** (one Ralph Wiggum loop per module):
-   - Uses `legacy_php_migration.md` prompt
-   - Handles: mysql_* → TypeORM, $_GET/$_POST → DTOs, $_SESSION → JWT, etc.
+### Step 4: Migrate Services
+**Main gateway:**
+```bash
+/ralph-loop "$(cat prompts/legacy_php_migration.md)" \
+  --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+```
 
-6. **Validation** (Ralph Wiggum loop with `full_validation.md`):
-   - Unit tests (>80% coverage), security tests, contract tests
+**Extracted microservices:**
+```bash
+/ralph-loop "$(cat prompts/extract_service.md)" \
+  --context output/services/auth-service/analysis/service_context.json \
+  --completion-promise "SERVICE_COMPLETE"
+```
 
-7. **Build & Deploy** (manual):
-   ```bash
-   nx affected --target=build
-   nx affected --target=test
-   ```
+### Step 5: Validation
+```bash
+/ralph-loop "$(cat prompts/full_validation.md)" \
+  --completion-promise "VALIDATION_COMPLETE" --max-iterations 40
+```
+
+### Step 6: Build & Deploy
+```bash
+nx affected --target=build
+nx affected --target=test
+```
 
 ## Key PHP → NestJS Migration Patterns
 

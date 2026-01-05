@@ -42,16 +42,26 @@ This toolkit handles:
 ```
 migration-toolkit/
 ├── scripts/
-│   ├── master_migration.sh              # Orchestrates analysis phase
+│   ├── master_migration.sh              # Orchestrates ALL analysis (8 phases)
 │   ├── extract_legacy_php.py            # Analyzes PHP code + security scan
 │   ├── extract_routes.py                # Parses htaccess/nginx/PHP routes
 │   ├── extract_database.py              # Generates TypeORM entities from SQL
 │   ├── generate_architecture_context.py # Creates comprehensive LLM-optimized context
-│   └── chunk_legacy_php.sh              # Splits large files
+│   ├── chunk_legacy_php.sh              # Splits large files
+│   └── submodules/                      # Submodule extraction (automatic)
+│       ├── detect_call_points.py        # Find usage in main project
+│       ├── analyze_call_contract.py     # Input/output preservation
+│       ├── analyze_data_ownership.py    # Database table ownership
+│       ├── analyze_performance_impact.py # Prometheus metrics
+│       ├── generate_service_contract.py # API endpoints
+│       ├── generate_shared_library.py   # Shared DTOs for Nx lib
+│       ├── generate_resilience_config.py # Circuit breaker, retry
+│       ├── generate_health_checks.py    # Health endpoints
+│       └── generate_service_context.py  # LLM context for implementation
 ├── prompts/
 │   ├── system_design_architect.md      # Architecture design (Nx monorepo)
-│   ├── nestjs_best_practices_research.md
-│   ├── legacy_php_migration.md         # Service migration
+│   ├── extract_service.md              # Implement extracted microservice
+│   ├── legacy_php_migration.md         # Main gateway migration
 │   ├── generate_service.md             # New service creation
 │   ├── tdd_migration.md                # Test-driven migration
 │   └── full_validation.md              # Testing & validation
@@ -153,9 +163,9 @@ claude mcp list
 
 **Important:** Prompts query on-demand only - no bulk documentation fetching to avoid context bloat.
 
-### Step 1: Analyze Your PHP Project
+### Step 1: Analyze Your PHP Project (Single Command)
 
-Basic usage (auto-discovers SQL, nginx, and .htaccess files):
+**One command does everything** - analyzes PHP, routes, database, AND extracts git submodules:
 ```bash
 ./scripts/master_migration.sh /path/to/php-project -o ./output
 ```
@@ -165,52 +175,54 @@ With direct PHP file inclusion (recommended):
 ./scripts/master_migration.sh /path/to/php-project -o ./output --include-direct-files
 ```
 
-With manual overrides (if auto-discovery picks wrong files):
-```bash
-./scripts/master_migration.sh /path/to/php-project -o ./output \
-  --sql-file /path/to/specific/schema.sql \
-  --nginx /path/to/specific/nginx.conf \
-  --include-direct-files
+**Auto-Discovery (No Flags Required):**
+- `*.sql` files → Database schema extraction
+- `*/nginx/*.conf`, `.htaccess` → Route extraction
+- **Git submodules → Automatically extracted as NestJS microservices**
+- PHP include/require patterns → Dependency mapping
+
+**8 Automated Phases:**
+| Phase | Description |
+|-------|-------------|
+| 0 | Environment check + auto-discovery (configs, submodules) |
+| 1 | PHP code analysis with security scanning |
+| 2 | Route extraction (.htaccess, nginx, PHP) |
+| 3 | Database schema → TypeORM entities |
+| **4** | **Submodule extraction → NestJS microservices** (if submodules exist) |
+| 5 | NestJS best practices research (BEFORE design) |
+| 6 | System design guidance |
+| 7-8 | Service generation & testing guidance |
+
+**Outputs:**
 ```
-
-**Auto-Discovery:** The script automatically finds and uses:
-- SQL files (`*.sql`) - uses first found, or specify with `--sql-file`
-- Nginx configs (`*/nginx/*.conf`) - uses first found, or specify with `--nginx`
-- Apache/httpd configs (`*/httpd/*.conf`, `vhost.conf`) - listed for reference
-- `.htaccess` files - all included in route analysis
-
-This generates:
-- `output/analysis/discovered_configs.json` - Auto-discovered config files
-- `output/analysis/legacy_analysis.json` - Code structure + security analysis
-- `output/analysis/legacy_analysis.md` - Human-readable report
-- `output/analysis/routes.json` - Extracted routes from all sources
-- `output/analysis/routes.md` - Route documentation
-- `output/analysis/architecture_context.json` - Core context (entry points, services, config)
-- `output/analysis/architecture_routes.json` - All routes with handlers
-- `output/analysis/architecture_files.json` - All files with metrics
-- `output/analysis/architecture_security_db.json` - Security issues, database schema
-- `output/database/schema.json` - Database schema (if SQL found/provided)
-- `output/database/entities/` - Generated TypeORM entities
-- `output/prompts/system_design_prompt.md` - Ready-to-use prompt
+output/
+├── analysis/
+│   ├── discovered_configs.json       # Auto-discovered files
+│   ├── legacy_analysis.json          # Code + security analysis
+│   ├── routes.json                   # All routes
+│   ├── architecture_context.json     # LLM-optimized context
+│   └── extracted_services.json       # Submodule manifest (if any)
+├── database/
+│   ├── schema.json                   # Database schema
+│   └── entities/                     # TypeORM entities
+├── services/                         # If submodules found
+│   └── {service-name}/
+│       ├── analysis/service_context.json   # LLM implementation guide
+│       ├── contracts/service_contract.json # API endpoints
+│       ├── data/data_ownership.json        # Table ownership
+│       └── observability/prometheus_metrics.yaml
+└── prompts/system_design_prompt.md   # Ready-to-use prompt
+```
 
 **Resuming from a specific phase:**
 ```bash
-# Resume from phase 3 (database extraction)
 ./scripts/master_migration.sh /path/to/php-project -o ./output -r 3
 ```
 
 **Skipping phases:**
 ```bash
-# Skip phases 4 and 5 (design and research - manual steps)
 ./scripts/master_migration.sh /path/to/php-project -o ./output -s 4,5
 ```
-
-**Phases:**
-- 0: Environment check + auto-discovery
-- 1: Legacy system analysis
-- 2: Route extraction
-- 3: Database schema extraction
-- 4-7: Manual AI-assisted steps (prepared prompts)
 
 ### Step 2: Design Architecture (Single Prompt)
 
@@ -289,13 +301,21 @@ nx generate @nx/nest:library common
 nx graph
 ```
 
-### Step 5: Migrate Each Service (Ralph Wiggum Loop)
+### Step 5: Migrate Services (Ralph Wiggum Loop)
 
+**For the main gateway:**
 ```bash
-# For each service identified in the architecture:
 /ralph-loop "$(cat prompts/legacy_php_migration.md)" \
   --completion-promise "SERVICE_COMPLETE" \
   --max-iterations 60
+```
+
+**For extracted microservices (if submodules were found):**
+```bash
+# Each extracted service has its own context file
+/ralph-loop "$(cat prompts/extract_service.md)" \
+  --context output/services/auth-service/analysis/service_context.json \
+  --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 Uses iterative loop because: write code → test → fix errors → repeat until passing.
@@ -339,28 +359,36 @@ See [SYSTEM_FLOW.md](./SYSTEM_FLOW.md) for detailed workflow.
 
 ### master_migration.sh
 
-Orchestrates the analysis phase with **automatic config file discovery**.
+Orchestrates the **complete analysis** with automatic discovery and submodule extraction.
 
 ```bash
 ./scripts/master_migration.sh <php_dir> [options]
 
 Options:
   -o, --output <dir>        Output directory (default: ./migration-output)
-  -r, --resume <phase>      Resume from specific phase (0-6)
+  -r, --resume <phase>      Resume from specific phase (0-8)
   -s, --skip <phases>       Skip phases (comma-separated, e.g., 4,5)
   --sql-file <path>         Override auto-discovered SQL file
   --nginx <path>            Override auto-discovered nginx config
+  --transport <type>        Microservice transport: tcp|grpc|http (default: tcp)
   --include-direct-files    Include direct PHP file access routes
   -c, --config <path>       Configuration file (YAML or shell)
 
-Auto-Discovery:
-  The script automatically scans the project for:
-  - *.sql files (uses first found for schema extraction)
-  - */nginx/*.conf, nginx.conf (uses first found for route extraction)
-  - */httpd/*.conf, vhost.conf (listed for reference)
-  - .htaccess files (all included in route analysis)
+Phases:
+  0: Environment check + auto-discovery (configs, submodules)
+  1: PHP code analysis with security scanning
+  2: Route extraction (.htaccess, nginx, PHP)
+  3: Database schema → TypeORM entities
+  4: Submodule extraction → NestJS microservices (if submodules exist)
+  5: NestJS best practices research (BEFORE design)
+  6: System design guidance
+  7: Service generation guidance
+  8: Testing guidance
 
-  Use --sql-file or --nginx to override if wrong file is selected.
+Auto-Discovery (No Flags Required):
+  - *.sql files → Database schema extraction
+  - */nginx/*.conf, .htaccess → Route extraction
+  - Git submodules from .gitmodules → Extracted as microservices
 ```
 
 ### extract_legacy_php.py
@@ -452,7 +480,8 @@ Options:
 |--------|------|---------|--------|
 | `system_design_architect.md` | Single | Design Nx monorepo structure | `ARCHITECTURE.md` |
 | `migration_report_generator.md` | Single | Generate comprehensive reports | `reports/` folder |
-| `legacy_php_migration.md` | Loop | Migrate PHP to Nx app | App code in `apps/` |
+| `legacy_php_migration.md` | Loop | Migrate main gateway | App code in `apps/gateway/` |
+| `extract_service.md` | Loop | Implement extracted microservice | App code in `apps/{service}/` |
 | `generate_service.md` | Loop | Create new Nx app | App + tests |
 | `tdd_migration.md` | Loop | Test-driven migration | Tests + code |
 | `full_validation.md` | Loop | Validate service | Validation report |

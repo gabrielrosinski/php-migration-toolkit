@@ -156,12 +156,14 @@ SKIP_PHASES=""
 SQL_FILE=""
 NGINX_CONFIG=""
 INCLUDE_DIRECT_FILES=false
+TRANSPORT="tcp"  # Default transport for microservices
 
 # Auto-discovered files (populated during phase 0)
 DISCOVERED_SQL_FILES=()
 DISCOVERED_NGINX_CONFIGS=()
 DISCOVERED_HTACCESS_FILES=()
 DISCOVERED_APACHE_CONFIGS=()
+DISCOVERED_SUBMODULES=()  # Git submodules found in the project
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -174,35 +176,36 @@ usage() {
     echo "Options:"
     echo "  -o, --output <dir>       Output directory (default: ./migration-output)"
     echo "  -c, --config <file>      Configuration file (YAML or shell)"
-    echo "  -r, --resume <phase>     Resume from specific phase (0-6)"
+    echo "  -r, --resume <phase>     Resume from specific phase (0-8)"
     echo "  -s, --skip <phases>      Skip phases (comma-separated, e.g., 4,5)"
     echo "  --sql-file <file>        Override auto-discovered SQL file"
     echo "  --nginx <file>           Override auto-discovered nginx config"
+    echo "  --transport <type>       Microservice transport: tcp|grpc|http (default: tcp)"
     echo "  --include-direct-files   Include directly accessible PHP files in route analysis"
     echo "  -h, --help               Show this help"
     echo ""
-    echo "Auto-Discovery:"
-    echo "  The script automatically finds and uses:"
-    echo "  - *.sql files (first found used for schema extraction)"
-    echo "  - */nginx/*.conf files (first found used for route extraction)"
-    echo "  - */httpd/*.conf, vhost.conf (listed for reference)"
-    echo "  - .htaccess files (all included in route analysis)"
+    echo "Auto-Discovery (No Flags Required):"
+    echo "  The script automatically finds and analyzes:"
+    echo "  - *.sql files (schema extraction)"
+    echo "  - */nginx/*.conf, .htaccess (route extraction)"
+    echo "  - Git submodules → extracted as separate NestJS microservices"
+    echo "  - PHP include/require patterns → dependency mapping"
     echo ""
     echo "Examples:"
     echo "  $0 /var/www/legacy-php -o ./output"
     echo "  $0 /var/www/legacy-php -o ./output --include-direct-files"
-    echo "  $0 /var/www/legacy-php -o ./output --sql-file ./db/schema.sql"
     echo "  $0 /var/www/legacy-php -o ./output -r 3"
     echo ""
     echo "Phases:"
-    echo "  0: Environment check + auto-discovery"
-    echo "  1: Legacy system analysis"
-    echo "  2: Route extraction"
-    echo "  3: Database schema extraction"
-    echo "  4: System design (Principal Architect)"
-    echo "  5: NestJS best practices research"
-    echo "  6: Service generation guidance"
-    echo "  7: Testing & validation guidance"
+    echo "  0: Environment check + auto-discovery (configs, submodules)"
+    echo "  1: Legacy PHP code analysis"
+    echo "  2: Route extraction (.htaccess, nginx, PHP)"
+    echo "  3: Database schema extraction → TypeORM entities"
+    echo "  4: Submodule extraction → NestJS microservices (if submodules found)"
+    echo "  5: NestJS best practices research (BEFORE design)"
+    echo "  6: System design (Principal Architect)"
+    echo "  7: Service generation guidance"
+    echo "  8: Testing & validation guidance"
     echo ""
     exit 1
 }
@@ -232,6 +235,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --nginx)
             NGINX_CONFIG="$2"
+            shift 2
+            ;;
+        --transport)
+            TRANSPORT="$2"
             shift 2
             ;;
         --include-direct-files)
@@ -501,16 +508,64 @@ phase0_environment() {
         done
     fi
 
+    # =========================================================================
+    # AUTO-DISCOVERY: Git Submodules
+    # =========================================================================
+    echo ""
+    echo -e "  ${CYAN}Discovering git submodules...${NC}"
+
+    if [ -f "$PROJECT_ROOT/.gitmodules" ]; then
+        # Parse .gitmodules to find all submodule paths
+        while IFS= read -r line; do
+            if [[ "$line" =~ path[[:space:]]*=[[:space:]]*(.+) ]]; then
+                submodule_path="${BASH_REMATCH[1]}"
+                submodule_path=$(echo "$submodule_path" | xargs)  # Trim whitespace
+                full_path="$PROJECT_ROOT/$submodule_path"
+
+                if [ -d "$full_path" ]; then
+                    # Check if submodule is initialized (has files)
+                    if [ -n "$(ls -A "$full_path" 2>/dev/null)" ]; then
+                        DISCOVERED_SUBMODULES+=("$submodule_path")
+                        echo -e "    ${GREEN}✓${NC} $submodule_path (initialized)"
+                    else
+                        echo -e "    ${YELLOW}!${NC} $submodule_path (not initialized - run: git submodule update --init)"
+                    fi
+                else
+                    echo -e "    ${RED}✗${NC} $submodule_path (directory not found)"
+                fi
+            fi
+        done < "$PROJECT_ROOT/.gitmodules"
+
+        if [ ${#DISCOVERED_SUBMODULES[@]} -gt 0 ]; then
+            echo ""
+            echo -e "  ${GREEN}✓${NC} Found ${#DISCOVERED_SUBMODULES[@]} initialized git submodule(s)"
+            echo -e "    ${CYAN}These will be extracted as NestJS microservices in Phase 4${NC}"
+        else
+            echo -e "  ${YELLOW}!${NC} No initialized submodules found"
+        fi
+    else
+        echo -e "  ${YELLOW}!${NC} No .gitmodules file - project has no git submodules"
+    fi
+
     # Save discovered files to output for later reference
     mkdir -p "$OUTPUT_DIR/analysis"
+
+    # Build submodules JSON array
+    SUBMODULES_JSON="[]"
+    if [ ${#DISCOVERED_SUBMODULES[@]} -gt 0 ]; then
+        SUBMODULES_JSON=$(printf '%s\n' "${DISCOVERED_SUBMODULES[@]}" | jq -R . | jq -s .)
+    fi
+
     cat > "$OUTPUT_DIR/analysis/discovered_configs.json" << EOF
 {
   "sql_files": $(printf '%s\n' "${DISCOVERED_SQL_FILES[@]}" | jq -R . | jq -s .),
   "nginx_configs": $(printf '%s\n' "${DISCOVERED_NGINX_CONFIGS[@]}" | jq -R . | jq -s .),
   "apache_configs": $(printf '%s\n' "${DISCOVERED_APACHE_CONFIGS[@]}" | jq -R . | jq -s .),
   "htaccess_files": $(printf '%s\n' "${DISCOVERED_HTACCESS_FILES[@]}" | jq -R . | jq -s .),
+  "submodules": $SUBMODULES_JSON,
   "selected_sql_file": "$SQL_FILE",
-  "selected_nginx_config": "$NGINX_CONFIG"
+  "selected_nginx_config": "$NGINX_CONFIG",
+  "transport": "$TRANSPORT"
 }
 EOF
     echo ""
@@ -823,16 +878,331 @@ phase3_database() {
 }
 
 # ============================================================================
-# PHASE 4: SYSTEM DESIGN (PRINCIPAL ARCHITECT)
+# PHASE 4: SUBMODULE EXTRACTION
 # ============================================================================
-phase4_design() {
+phase4_submodules() {
     if ! should_run_phase 4; then
-        echo -e "${YELLOW}⏭ Skipping Phase 4: System Design${NC}"
+        echo -e "${YELLOW}⏭ Skipping Phase 4: Submodule Extraction${NC}"
+        return 0
+    fi
+
+    # Load discovered submodules from phase 0 if not in memory
+    if [ ${#DISCOVERED_SUBMODULES[@]} -eq 0 ] && [ -f "$OUTPUT_DIR/analysis/discovered_configs.json" ]; then
+        while IFS= read -r submodule; do
+            [ -n "$submodule" ] && DISCOVERED_SUBMODULES+=("$submodule")
+        done < <(jq -r '.submodules[]?' "$OUTPUT_DIR/analysis/discovered_configs.json" 2>/dev/null)
+    fi
+
+    # Skip if no submodules
+    if [ ${#DISCOVERED_SUBMODULES[@]} -eq 0 ]; then
+        echo -e "${YELLOW}⏭ Skipping Phase 4: No submodules to extract${NC}"
+        save_state 4 "skipped"
+        echo ""
         return 0
     fi
 
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}▶ PHASE 4: System Design (Principal Architect)${NC}"
+    echo -e "${GREEN}▶ PHASE 4: Submodule Extraction → NestJS Microservices${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${BLUE}Extracting ${#DISCOVERED_SUBMODULES[@]} submodule(s) as microservices${NC}"
+    echo -e "  ${BLUE}Transport:${NC} $TRANSPORT"
+    echo ""
+
+    # Create services directory
+    SERVICES_DIR="$OUTPUT_DIR/services"
+    mkdir -p "$SERVICES_DIR"
+
+    # Track valid services for manifest
+    VALID_SERVICES=()
+
+    for submodule in "${DISCOVERED_SUBMODULES[@]}"; do
+        submodule_path="$PROJECT_ROOT/$submodule"
+        service_name=$(basename "$submodule" | sed 's/_/-/g')-service
+        service_output="$SERVICES_DIR/$service_name"
+
+        echo -e "${MAGENTA}───────────────────────────────────────────────────────────────────${NC}"
+        echo -e "${GREEN}Extracting: $submodule → $service_name${NC}"
+        echo -e "${MAGENTA}───────────────────────────────────────────────────────────────────${NC}"
+        echo ""
+
+        # Create service output directories
+        mkdir -p "$service_output/analysis"
+        mkdir -p "$service_output/contracts"
+        mkdir -p "$service_output/data/entities"
+        mkdir -p "$service_output/observability"
+        mkdir -p "$service_output/resilience"
+        mkdir -p "$service_output/shared-lib/dto"
+        mkdir -p "$service_output/tests/contract"
+
+        # Phase E2: Submodule Analysis
+        echo -e "  ${BLUE}Analyzing submodule...${NC}"
+
+        if [ -f "$SCRIPT_DIR/extract_legacy_php.py" ]; then
+            run_with_spinner "Analyzing PHP code in $submodule" 300 \
+                python3 "$SCRIPT_DIR/extract_legacy_php.py" \
+                    "$submodule_path" \
+                    --output "$service_output/analysis/legacy_analysis.json" \
+                    --format json || echo -e "  ${YELLOW}!${NC} PHP analysis failed (continuing)"
+        fi
+
+        if [ -f "$SCRIPT_DIR/extract_routes.py" ]; then
+            run_with_spinner "Extracting routes from $submodule" 120 \
+                python3 "$SCRIPT_DIR/extract_routes.py" \
+                    "$submodule_path" \
+                    --output "$service_output/analysis/routes.json" \
+                    --format json || echo -e "  ${YELLOW}!${NC} Route extraction failed (continuing)"
+        fi
+
+        # Phase E3: Call Contract Analysis
+        echo -e "  ${BLUE}Analyzing call contracts...${NC}"
+
+        if [ -f "$SCRIPT_DIR/submodules/detect_call_points.py" ]; then
+            run_with_spinner "Detecting call points from main project" 300 \
+                python3 "$SCRIPT_DIR/submodules/detect_call_points.py" \
+                    --project-root "$PROJECT_ROOT" \
+                    --submodule-path "$submodule" \
+                    --output "$service_output/contracts/call_points.json" || true
+        fi
+
+        if [ -f "$SCRIPT_DIR/submodules/analyze_call_contract.py" ]; then
+            run_with_spinner "Analyzing call contracts" 300 \
+                python3 "$SCRIPT_DIR/submodules/analyze_call_contract.py" \
+                    --submodule-analysis "$service_output/analysis/legacy_analysis.json" \
+                    --call-points "$service_output/contracts/call_points.json" \
+                    --output "$service_output/contracts/call_contract.json" || true
+        fi
+
+        # Phase E4: Data Ownership Analysis
+        echo -e "  ${BLUE}Analyzing data ownership...${NC}"
+
+        if [ -f "$SCRIPT_DIR/submodules/analyze_data_ownership.py" ]; then
+            run_with_spinner "Analyzing data ownership" 180 \
+                python3 "$SCRIPT_DIR/submodules/analyze_data_ownership.py" \
+                    --submodule-analysis "$service_output/analysis/legacy_analysis.json" \
+                    --main-analysis "$OUTPUT_DIR/analysis/legacy_analysis.json" \
+                    --output "$service_output/data/data_ownership.json" || true
+        fi
+
+        # Phase E5: Performance Analysis
+        echo -e "  ${BLUE}Analyzing performance impact...${NC}"
+
+        if [ -f "$SCRIPT_DIR/submodules/analyze_performance_impact.py" ]; then
+            run_with_spinner "Analyzing performance impact" 180 \
+                python3 "$SCRIPT_DIR/submodules/analyze_performance_impact.py" \
+                    --call-points "$service_output/contracts/call_points.json" \
+                    --output-analysis "$service_output/observability/performance_analysis.json" \
+                    --output-prometheus "$service_output/observability/prometheus_metrics.yaml" \
+                    --service-name "$service_name" || true
+        fi
+
+        # Phase E6: Service Artifacts Generation
+        echo -e "  ${BLUE}Generating service artifacts...${NC}"
+
+        if [ -f "$SCRIPT_DIR/submodules/generate_service_contract.py" ]; then
+            run_with_spinner "Generating service contract" 120 \
+                python3 "$SCRIPT_DIR/submodules/generate_service_contract.py" \
+                    --call-contract "$service_output/contracts/call_contract.json" \
+                    --transport "$TRANSPORT" \
+                    --service-name "$service_name" \
+                    --output "$service_output/contracts/service_contract.json" || true
+        fi
+
+        if [ -f "$SCRIPT_DIR/submodules/generate_shared_library.py" ]; then
+            run_with_spinner "Generating shared DTO library" 120 \
+                python3 "$SCRIPT_DIR/submodules/generate_shared_library.py" \
+                    --service-contract "$service_output/contracts/service_contract.json" \
+                    --service-name "$service_name" \
+                    --output-dir "$service_output/shared-lib" || true
+        fi
+
+        if [ -f "$SCRIPT_DIR/submodules/generate_resilience_config.py" ]; then
+            run_with_spinner "Generating resilience configuration" 60 \
+                python3 "$SCRIPT_DIR/submodules/generate_resilience_config.py" \
+                    --service-name "$service_name" \
+                    --output-dir "$service_output/resilience" || true
+        fi
+
+        if [ -f "$SCRIPT_DIR/submodules/generate_health_checks.py" ]; then
+            run_with_spinner "Generating health check configuration" 60 \
+                python3 "$SCRIPT_DIR/submodules/generate_health_checks.py" \
+                    --service-name "$service_name" \
+                    --output "$service_output/resilience/health_checks.json" || true
+        fi
+
+        if [ -f "$SCRIPT_DIR/submodules/generate_contract_tests.py" ]; then
+            run_with_spinner "Generating contract tests" 120 \
+                python3 "$SCRIPT_DIR/submodules/generate_contract_tests.py" \
+                    --service-contract "$service_output/contracts/service_contract.json" \
+                    --service-name "$service_name" \
+                    --output "$service_output/tests/contract/${service_name}.pact.json" || true
+        fi
+
+        if [ -f "$SCRIPT_DIR/submodules/generate_migration_mapping.py" ]; then
+            run_with_spinner "Generating migration mapping" 120 \
+                python3 "$SCRIPT_DIR/submodules/generate_migration_mapping.py" \
+                    --call-contract "$service_output/contracts/call_contract.json" \
+                    --service-contract "$service_output/contracts/service_contract.json" \
+                    --output "$service_output/contracts/migration_mapping.json" || true
+        fi
+
+        # Generate tracing configuration
+        cat > "$service_output/observability/tracing_config.json" << EOF
+{
+  "service_name": "$service_name",
+  "correlation_id": {
+    "header": "x-correlation-id",
+    "propagate": true
+  },
+  "spans": {
+    "include_db_queries": true,
+    "include_http_requests": true
+  }
+}
+EOF
+
+        # Generate LLM context
+        if [ -f "$SCRIPT_DIR/submodules/generate_service_context.py" ]; then
+            run_with_spinner "Generating service context for LLM" 120 \
+                python3 "$SCRIPT_DIR/submodules/generate_service_context.py" \
+                    --service-dir "$service_output" \
+                    --service-name "$service_name" \
+                    --transport "$TRANSPORT" \
+                    --output "$service_output/analysis/service_context.json" || true
+        fi
+
+        VALID_SERVICES+=("$submodule:$service_name")
+        echo -e "  ${GREEN}✓${NC} Completed: $service_name"
+        echo ""
+    done
+
+    # Generate services manifest for system design integration
+    echo -e "  ${BLUE}Generating services manifest...${NC}"
+    MANIFEST_FILE="$OUTPUT_DIR/analysis/extracted_services.json"
+
+    cat > "$MANIFEST_FILE" << EOF
+{
+  "extracted_at": "$(date -Iseconds)",
+  "transport": "$TRANSPORT",
+  "source_project": "$PROJECT_ROOT",
+  "services": [
+EOF
+
+    first=true
+    for entry in "${VALID_SERVICES[@]}"; do
+        IFS=':' read -r submodule service_name <<< "$entry"
+        service_output="$SERVICES_DIR/$service_name"
+
+        if [ "$first" = true ]; then
+            first=false
+        else
+            echo "," >> "$MANIFEST_FILE"
+        fi
+
+        # Read key data from generated files
+        endpoints_count=0
+        owned_tables="[]"
+        patterns="[]"
+
+        if [ -f "$service_output/contracts/service_contract.json" ]; then
+            endpoints_count=$(python3 -c "import json; d=json.load(open('$service_output/contracts/service_contract.json')); print(len(d.get('endpoints', [])))" 2>/dev/null || echo 0)
+            patterns=$(python3 -c "import json; d=json.load(open('$service_output/contracts/service_contract.json')); print(json.dumps(d.get('message_patterns', [])[:5]))" 2>/dev/null || echo "[]")
+        fi
+
+        if [ -f "$service_output/data/data_ownership.json" ]; then
+            owned_tables=$(python3 -c "import json; d=json.load(open('$service_output/data/data_ownership.json')); print(json.dumps(d.get('owned_tables', [])))" 2>/dev/null || echo "[]")
+        fi
+
+        cat >> "$MANIFEST_FILE" << ENTRY
+    {
+      "service_name": "$service_name",
+      "source_submodule": "$submodule",
+      "transport": "$TRANSPORT",
+      "endpoints_count": $endpoints_count,
+      "owned_tables": $owned_tables,
+      "message_patterns": $patterns,
+      "paths": {
+        "service_context": "services/$service_name/analysis/service_context.json",
+        "service_contract": "services/$service_name/contracts/service_contract.json",
+        "data_ownership": "services/$service_name/data/data_ownership.json",
+        "call_contract": "services/$service_name/contracts/call_contract.json"
+      }
+    }
+ENTRY
+    done
+
+    cat >> "$MANIFEST_FILE" << EOF
+
+  ],
+  "summary": {
+    "total_services": ${#VALID_SERVICES[@]},
+    "transport": "$TRANSPORT"
+  }
+}
+EOF
+
+    echo -e "  ${GREEN}✓${NC} Services manifest: $MANIFEST_FILE"
+    echo ""
+
+    # Summary
+    echo "  Extraction Summary:"
+    echo "  ├── Services extracted: ${#VALID_SERVICES[@]}"
+    for entry in "${VALID_SERVICES[@]}"; do
+        IFS=':' read -r submodule service_name <<< "$entry"
+        echo "  │   └── $submodule → $service_name"
+    done
+    echo "  ├── Output: $SERVICES_DIR"
+    echo "  └── Manifest: $MANIFEST_FILE"
+
+    save_state 4 "complete"
+    echo ""
+    echo -e "${GREEN}✓ Phase 4 Complete${NC}"
+    echo ""
+}
+
+# ============================================================================
+# PHASE 5: NESTJS BEST PRACTICES RESEARCH (Before Design!)
+# ============================================================================
+phase5_research() {
+    if ! should_run_phase 5; then
+        echo -e "${YELLOW}⏭ Skipping Phase 5: NestJS Best Practices${NC}"
+        return 0
+    fi
+
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}▶ PHASE 5: NestJS Best Practices Research${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${YELLOW}Research best practices BEFORE designing architecture${NC}"
+    echo ""
+
+    cp "$TOOLKIT_ROOT/prompts/nestjs_best_practices_research.md" "$OUTPUT_DIR/prompts/"
+
+    echo "  Best practices research prompt: $OUTPUT_DIR/prompts/nestjs_best_practices_research.md"
+    echo ""
+    echo "  Run this FIRST to compile NestJS patterns:"
+    echo ""
+    echo -e "  ${CYAN}/ralph-loop \"\$(cat $OUTPUT_DIR/prompts/nestjs_best_practices_research.md)\" \\${NC}"
+    echo -e "  ${CYAN}  --completion-promise \"RESEARCH_COMPLETE\" \\${NC}"
+    echo -e "  ${CYAN}  --max-iterations 20${NC}"
+    echo ""
+
+    save_state 5 "ready"
+    echo -e "${GREEN}✓ Phase 5 Prepared${NC}"
+    echo ""
+}
+
+# ============================================================================
+# PHASE 6: SYSTEM DESIGN (PRINCIPAL ARCHITECT)
+# ============================================================================
+phase6_design() {
+    if ! should_run_phase 6; then
+        echo -e "${YELLOW}⏭ Skipping Phase 6: System Design${NC}"
+        return 0
+    fi
+
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}▶ PHASE 6: System Design (Principal Architect)${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "${YELLOW}This phase requires AI assistance (Claude Code + Ralph Wiggum)${NC}"
@@ -896,52 +1266,22 @@ phase4_design() {
 
 EOF
 
-    save_state 4 "ready"
-    echo -e "${GREEN}✓ Phase 4 Prepared (requires manual execution)${NC}"
+    save_state 6 "ready"
+    echo -e "${GREEN}✓ Phase 6 Prepared (requires manual execution)${NC}"
     echo ""
 }
 
 # ============================================================================
-# PHASE 5: NESTJS BEST PRACTICES
+# PHASE 7: SERVICE GENERATION
 # ============================================================================
-phase5_research() {
-    if ! should_run_phase 5; then
-        echo -e "${YELLOW}⏭ Skipping Phase 5: NestJS Best Practices${NC}"
+phase7_generation() {
+    if ! should_run_phase 7; then
+        echo -e "${YELLOW}⏭ Skipping Phase 7: Service Generation${NC}"
         return 0
     fi
 
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}▶ PHASE 5: NestJS Best Practices Research${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-
-    cp "$TOOLKIT_ROOT/prompts/nestjs_best_practices_research.md" "$OUTPUT_DIR/prompts/"
-
-    echo "  Best practices research prompt: $OUTPUT_DIR/prompts/nestjs_best_practices_research.md"
-    echo ""
-    echo "  Run this to compile NestJS patterns:"
-    echo ""
-    echo -e "  ${CYAN}/ralph-loop \"\$(cat $OUTPUT_DIR/prompts/nestjs_best_practices_research.md)\" \\${NC}"
-    echo -e "  ${CYAN}  --completion-promise \"RESEARCH_COMPLETE\" \\${NC}"
-    echo -e "  ${CYAN}  --max-iterations 20${NC}"
-    echo ""
-
-    save_state 5 "ready"
-    echo -e "${GREEN}✓ Phase 5 Prepared${NC}"
-    echo ""
-}
-
-# ============================================================================
-# PHASE 6: SERVICE GENERATION
-# ============================================================================
-phase6_generation() {
-    if ! should_run_phase 6; then
-        echo -e "${YELLOW}⏭ Skipping Phase 6: Service Generation${NC}"
-        return 0
-    fi
-
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}▶ PHASE 6: Service Generation${NC}"
+    echo -e "${GREEN}▶ PHASE 7: Service Generation${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -949,35 +1289,45 @@ phase6_generation() {
     cp "$TOOLKIT_ROOT/prompts/legacy_php_migration.md" "$OUTPUT_DIR/prompts/"
     cp "$TOOLKIT_ROOT/prompts/generate_service.md" "$OUTPUT_DIR/prompts/"
     cp "$TOOLKIT_ROOT/prompts/tdd_migration.md" "$OUTPUT_DIR/prompts/"
+    cp "$TOOLKIT_ROOT/prompts/extract_service.md" "$OUTPUT_DIR/prompts/" 2>/dev/null || true
 
     # Create services directory structure
     mkdir -p "$OUTPUT_DIR/services"
 
     echo "  Service generation prompts copied to: $OUTPUT_DIR/prompts/"
     echo ""
-    echo "  After completing system design (Phase 4), for each service run:"
+    echo "  After completing system design (Phase 5), for each service run:"
     echo ""
+    echo -e "  ${CYAN}# For main gateway service:${NC}"
     echo -e "  ${CYAN}/ralph-loop \"\$(cat prompts/legacy_php_migration.md)\" \\${NC}"
-    echo -e "  ${CYAN}  --completion-promise \"SERVICE_COMPLETE\" \\${NC}"
-    echo -e "  ${CYAN}  --max-iterations 60${NC}"
+    echo -e "  ${CYAN}  --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
     echo ""
 
-    save_state 6 "ready"
-    echo -e "${GREEN}✓ Phase 6 Prepared${NC}"
+    # Check if extracted services exist
+    if [ -f "$OUTPUT_DIR/analysis/extracted_services.json" ]; then
+        echo -e "  ${CYAN}# For extracted microservices:${NC}"
+        echo -e "  ${CYAN}/ralph-loop \"\$(cat prompts/extract_service.md)\" \\${NC}"
+        echo -e "  ${CYAN}  --context output/services/{service}/analysis/service_context.json \\${NC}"
+        echo -e "  ${CYAN}  --completion-promise \"SERVICE_COMPLETE\"${NC}"
+        echo ""
+    fi
+
+    save_state 7 "ready"
+    echo -e "${GREEN}✓ Phase 7 Prepared${NC}"
     echo ""
 }
 
 # ============================================================================
-# PHASE 7: TESTING
+# PHASE 8: TESTING
 # ============================================================================
-phase7_testing() {
-    if ! should_run_phase 7; then
-        echo -e "${YELLOW}⏭ Skipping Phase 7: Testing & Validation${NC}"
+phase8_testing() {
+    if ! should_run_phase 8; then
+        echo -e "${YELLOW}⏭ Skipping Phase 8: Testing & Validation${NC}"
         return 0
     fi
 
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}▶ PHASE 7: Testing & Validation${NC}"
+    echo -e "${GREEN}▶ PHASE 8: Testing & Validation${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
@@ -992,8 +1342,8 @@ phase7_testing() {
     echo -e "  ${CYAN}  --max-iterations 40${NC}"
     echo ""
 
-    save_state 7 "ready"
-    echo -e "${GREEN}✓ Phase 7 Prepared${NC}"
+    save_state 8 "ready"
+    echo -e "${GREEN}✓ Phase 8 Prepared${NC}"
     echo ""
 }
 
@@ -1030,6 +1380,18 @@ summary() {
         echo ""
     fi
 
+    # Show extracted services if any
+    if [ -f "$OUTPUT_DIR/analysis/extracted_services.json" ]; then
+        echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${MAGENTA}EXTRACTED MICROSERVICES${NC}"
+        echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        SERVICE_COUNT=$(jq '.summary.total_services // 0' "$OUTPUT_DIR/analysis/extracted_services.json")
+        echo "  Submodules extracted as microservices: $SERVICE_COUNT"
+        jq -r '.services[]? | "  • \(.source_submodule) → \(.service_name)"' "$OUTPUT_DIR/analysis/extracted_services.json" 2>/dev/null
+        echo ""
+    fi
+
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}NEXT STEPS (Manual - Requires Claude Code)${NC}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -1040,18 +1402,30 @@ summary() {
     echo "   - Complexity factors"
     echo "   - Recommended service boundaries"
     echo ""
-    echo "2. SYSTEM DESIGN (Most Important - Do First!)"
+    echo "2. RESEARCH BEST PRACTICES (Do First!)"
     echo -e "   ${CYAN}cd $OUTPUT_DIR${NC}"
-    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/system_design_prompt.md)\" --completion-promise \"DESIGN_COMPLETE\" --max-iterations 40${NC}"
+    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/nestjs_best_practices_research.md)\" --completion-promise \"RESEARCH_COMPLETE\" --max-iterations 20${NC}"
     echo ""
-    echo "3. CREATE NX WORKSPACE (After Design Approval)"
+    echo "3. SYSTEM DESIGN (After Research)"
+    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/system_design_prompt.md)\" --completion-promise \"DESIGN_COMPLETE\" --max-iterations 40${NC}"
+    if [ -f "$OUTPUT_DIR/analysis/extracted_services.json" ]; then
+        echo -e "   ${GREEN}Note: Extracted microservices will be automatically included in the design${NC}"
+    fi
+    echo ""
+    echo "4. CREATE NX WORKSPACE (After Design Approval)"
     echo -e "   ${CYAN}npx create-nx-workspace@latest my-project --preset=nest${NC}"
     echo ""
-    echo "4. SERVICE GENERATION (After Creating Workspace)"
-    echo "   For each service identified in the design:"
+    echo "5. SERVICE GENERATION (After Creating Workspace)"
+    echo "   For main gateway service:"
     echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/legacy_php_migration.md)\" --completion-promise \"SERVICE_COMPLETE\"${NC}"
+    if [ -f "$OUTPUT_DIR/analysis/extracted_services.json" ]; then
+        echo ""
+        echo "   For each extracted microservice:"
+        echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/extract_service.md)\" \\${NC}"
+        echo -e "   ${CYAN}  --context output/services/{service}/analysis/service_context.json${NC}"
+    fi
     echo ""
-    echo "5. VALIDATION (After Each Service)"
+    echo "6. VALIDATION (After Each Service)"
     echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/full_validation.md)\" --completion-promise \"VALIDATION_COMPLETE\"${NC}"
     echo ""
     echo -e "${GREEN}Good luck with your migration!${NC}"
@@ -1069,10 +1443,11 @@ main() {
     phase1_analysis
     phase2_routes
     phase3_database
-    phase4_design
-    phase5_research
-    phase6_generation
-    phase7_testing
+    phase4_submodules
+    phase5_research      # Research FIRST
+    phase6_design        # Then design with knowledge
+    phase7_generation
+    phase8_testing
     summary
 }
 
