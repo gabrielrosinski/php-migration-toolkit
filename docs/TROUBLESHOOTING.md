@@ -9,12 +9,13 @@ This guide covers common issues encountered during PHP to NestJS migration and t
 1. [Analysis Phase Issues](#analysis-phase-issues)
 2. [Route Extraction Issues](#route-extraction-issues)
 3. [Database Schema Issues](#database-schema-issues)
-4. [NestJS Build Issues](#nestjs-build-issues)
-5. [TypeORM Issues](#typeorm-issues)
-6. [Testing Issues](#testing-issues)
-7. [Ralph Wiggum Loop Issues](#ralph-wiggum-loop-issues)
-8. [Security Migration Issues](#security-migration-issues)
-9. [Context7 MCP Issues](#context7-mcp-issues)
+4. [Submodule Extraction Issues](#submodule-extraction-issues)
+5. [NestJS Build Issues](#nestjs-build-issues)
+6. [TypeORM Issues](#typeorm-issues)
+7. [Testing Issues](#testing-issues)
+8. [Ralph Wiggum Loop Issues](#ralph-wiggum-loop-issues)
+9. [Security Migration Issues](#security-migration-issues)
+10. [Context7 MCP Issues](#context7-mcp-issues)
 
 ---
 
@@ -147,6 +148,182 @@ export class User {
   orders: Order[];
 }
 ```
+
+---
+
+## Submodule Extraction Issues
+
+### No submodules detected
+
+If Phase 4 reports "No submodules found" but you have submodules:
+
+1. Check that `.gitmodules` file exists in project root
+2. Verify submodules are initialized:
+   ```bash
+   git submodule status
+   ```
+3. Initialize if needed:
+   ```bash
+   git submodule update --init --recursive
+   ```
+
+### Submodule not initialized
+
+The extraction skips uninitialized submodules. Initialize them:
+
+```bash
+# Initialize specific submodule
+git submodule update --init modules/auth
+
+# Or use the --init flag in extraction
+./scripts/submodules/extract_submodules.sh /path/to/project \
+  --submodules "modules/auth" \
+  --output ./output \
+  --init
+```
+
+### Call points not detected
+
+If `detect_call_points.py` finds no calls from main project to submodule:
+
+1. Check include/require patterns:
+   ```php
+   // These should be detected:
+   require_once 'modules/auth/User.php';
+   include 'modules/auth/Session.php';
+
+   // Dynamic includes may be missed:
+   $file = 'modules/' . $module . '/User.php';
+   require_once $file;
+   ```
+
+2. Check static method calls:
+   ```php
+   // Should be detected:
+   User::getById($id);
+   AuthModule\User::validate($token);
+
+   // May be missed if class name is dynamic:
+   $class::getById($id);
+   ```
+
+3. Run detection manually with verbose output:
+   ```bash
+   python scripts/submodules/detect_call_points.py \
+     /path/to/main-project \
+     --submodule-path modules/auth \
+     --verbose
+   ```
+
+### Data ownership conflicts
+
+If `data_ownership.json` shows tables owned by multiple services:
+
+1. Review the analysis to determine true ownership:
+   - Which service writes to the table most?
+   - Which service has the "source of truth" for this data?
+
+2. Resolve conflicts in the generated file:
+   ```json
+   {
+     "owned_tables": ["users", "sessions"],
+     "read_only_tables": ["products"],
+     "shared_with_main": ["audit_log"]
+   }
+   ```
+
+3. For shared tables, decide on strategy:
+   - **API calls**: Service A owns, Service B calls Service A
+   - **Events**: Service A publishes changes, Service B subscribes
+   - **Shared database**: Last resort, use with caution
+
+### Service context generation failed
+
+If `service_context.json` is empty or incomplete:
+
+1. Ensure all prerequisite scripts ran successfully:
+   ```bash
+   ls output/services/auth-service/
+   # Should have: analysis/, contracts/, data/, observability/, resilience/
+   ```
+
+2. Check for Python errors:
+   ```bash
+   python scripts/submodules/generate_service_context.py \
+     --service-dir output/services/auth-service \
+     --verbose
+   ```
+
+3. Verify input files exist:
+   - `analysis/legacy_analysis.json`
+   - `contracts/service_contract.json`
+   - `data/data_ownership.json`
+
+### Contract preservation issues
+
+If the generated DTOs don't match original PHP signatures:
+
+1. Check `call_contract.json` for the original contract:
+   ```json
+   {
+     "function": "User::getById",
+     "input": {
+       "parameters": [{"name": "userId", "type": "int"}]
+     },
+     "output": {
+       "type": "User|null",
+       "fields_used_by_callers": ["id", "email", "name"]
+     }
+   }
+   ```
+
+2. Ensure DTOs match exactly:
+   ```typescript
+   // Request must match PHP parameters
+   export class GetUserRequest {
+     userId: number;  // Same as PHP $userId
+   }
+
+   // Response must include all fields used by callers
+   export class GetUserResponse {
+     id: number;
+     email: string;
+     name: string;
+   }
+   ```
+
+3. If fields are missing, check `detect_call_points.py` output for which fields are actually used
+
+### Prometheus metrics not generated
+
+If `prometheus_metrics.yaml` is empty:
+
+1. Check `performance_analysis.json` exists
+2. Verify call frequency was analyzed:
+   ```bash
+   python scripts/submodules/analyze_performance_impact.py \
+     --service-dir output/services/auth-service \
+     --verbose
+   ```
+3. Manually add metrics based on service endpoints if automatic detection fails
+
+### Health checks missing database
+
+If health checks don't include database connectivity:
+
+1. Check `data_ownership.json` has `owned_tables`
+2. Add manually to `health_checks.json`:
+   ```json
+   {
+     "checks": ["database", "redis"],
+     "dependencies": {
+       "database": {
+         "type": "mysql",
+         "required": true
+       }
+     }
+   }
+   ```
 
 ---
 
