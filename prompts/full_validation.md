@@ -3,7 +3,7 @@
 # RALPH WIGGUM PROMPT
 #
 # Usage:
-#   /ralph-loop "$(cat prompts/full_validation.md)" \
+#   /ralph-wiggum:ralph-loop "$(cat prompts/full_validation.md)" \
 #     --completion-promise "VALIDATION_COMPLETE" \
 #     --max-iterations 40
 #

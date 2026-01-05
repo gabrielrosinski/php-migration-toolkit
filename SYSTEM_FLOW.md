@@ -41,7 +41,7 @@ Ralph Wiggum is a **persistent retry loop**. It feeds the same prompt to Claude 
 --max-iterations = SAFETY LIMIT (not a target!)
 
 Example:
-  /ralph-loop "..." --max-iterations 60
+  /ralph-wiggum:ralph-loop "..." --max-iterations 60
 
   This means: "Stop after 60 tries even if not complete"
   NOT: "You must iterate 60 times"
@@ -131,7 +131,7 @@ Reality:
 │  STEP 2: SYSTEM DESIGN (One Ralph Loop)                             │
 │  ══════════════════════════════════════                             │
 │                                                                      │
-│  $ /ralph-loop "$(cat prompts/system_design_architect.md)" \        │
+│  $ /ralph-wiggum:ralph-loop "$(cat prompts/system_design_architect.md)" \        │
 │      --completion-promise "DESIGN_COMPLETE" \                       │
 │      --max-iterations 40                                            │
 │                                                                      │
@@ -192,7 +192,7 @@ Reality:
 │  For main project modules (in gateway):                             │                               │
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────┐    │
-│  │ $ /ralph-loop "Migrate [module-name]..." \                 │    │
+│  │ $ /ralph-wiggum:ralph-loop "Migrate [module-name]..." \                 │    │
 │  │     --completion-promise "SERVICE_COMPLETE" \              │    │
 │  │     --max-iterations 60                                    │    │
 │  │                                                            │    │
@@ -220,7 +220,7 @@ Reality:
 │  For extracted submodules (separate microservices):                 │
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────┐    │
-│  │ /ralph-loop "$(cat prompts/extract_service.md)" \          │    │
+│  │ /ralph-wiggum:ralph-loop "$(cat prompts/extract_service.md)" \          │    │
 │  │   --completion-promise "SERVICE_COMPLETE" --max-iterations 60    │
 │  │                                                            │    │
 │  │ (Run inside Claude Code - the prompt reads context from    │    │
@@ -246,7 +246,7 @@ Reality:
 │  ══════════════════════════════════════════                        │
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────┐    │
-│  │ $ /ralph-loop "Validate [service-name]..." \               │    │
+│  │ $ /ralph-wiggum:ralph-loop "Validate [service-name]..." \               │    │
 │  │     --completion-promise "VALIDATION_COMPLETE" \           │    │
 │  │     --max-iterations 40                                    │    │
 │  │                                                            │    │

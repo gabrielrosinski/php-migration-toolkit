@@ -3,7 +3,7 @@
 # RALPH WIGGUM PROMPT
 #
 # Usage:
-#   /ralph-loop "$(cat prompts/nestjs_best_practices_research.md)" \
+#   /ralph-wiggum:ralph-loop "$(cat prompts/nestjs_best_practices_research.md)" \
 #     --completion-promise "RESEARCH_COMPLETE" \
 #     --max-iterations 20
 #

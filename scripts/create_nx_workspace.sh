@@ -1599,11 +1599,11 @@ echo "  4. View Nx project graph:"
 echo -e "     ${CYAN}npx nx graph${NC}"
 echo ""
 echo "  5. Migrate services using Ralph Wiggum (inside Claude Code):"
-echo -e "     ${CYAN}/ralph-loop \"\$(cat prompts/legacy_php_migration.md)\" --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
+echo -e "     ${CYAN}/ralph-wiggum:ralph-loop \"\$(cat prompts/legacy_php_migration.md)\" --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
 echo ""
 if [ ${#SERVICES[@]} -gt 0 ]; then
     echo "  6. For each extracted microservice (inside Claude Code):"
-    echo -e "     ${CYAN}/ralph-loop \"\$(cat prompts/extract_service.md)\" --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
+    echo -e "     ${CYAN}/ralph-wiggum:ralph-loop \"\$(cat prompts/extract_service.md)\" --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
     echo ""
 fi
 echo -e "${GREEN}Happy migrating!${NC}"

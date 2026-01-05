@@ -316,18 +316,17 @@ nx generate @nx/nest:application users-service
 
 ### Step 5: Migrate Services (Ralph Wiggum Loop)
 
-> **Note:** `/ralph-loop` is a Claude Code slash command. Run it inside Claude Code, not in your terminal.
+> **Note:** These are Claude Code skill commands. Run them inside Claude Code, not in your terminal.
 
 **For the main gateway:**
 ```
-/ralph-loop "$(cat prompts/legacy_php_migration.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+/ralph-wiggum:ralph-loop "$(cat prompts/legacy_php_migration.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 **For extracted microservices (if submodules were found):**
 ```
-# First, read the service context, then run the loop
-# The prompt will read from output/services/{service}/analysis/service_context.json
-/ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+# The prompt reads context from output/services/{service}/analysis/service_context.json
+/ralph-wiggum:ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 Uses iterative loop because: write code → test → fix errors → repeat until passing.
@@ -335,7 +334,7 @@ Uses iterative loop because: write code → test → fix errors → repeat until
 ### Step 6: Validate (Ralph Wiggum Loop)
 
 ```
-/ralph-loop "$(cat prompts/full_validation.md)" --completion-promise "VALIDATION_COMPLETE" --max-iterations 40
+/ralph-wiggum:ralph-loop "$(cat prompts/full_validation.md)" --completion-promise "VALIDATION_COMPLETE" --max-iterations 40
 ```
 
 Uses iterative loop because: run tests → fix failures → re-run until all pass.
@@ -529,7 +528,7 @@ Options:
 | `full_validation.md` | Loop | Validate service | Validation report |
 
 **Single** = One-shot prompt with `claude "$(cat prompt.md)"`
-**Loop** = Iterative with `/ralph-loop` (for tasks requiring build/test cycles)
+**Loop** = Iterative with `/ralph-wiggum:ralph-loop` (for tasks requiring build/test cycles)
 
 ## Nx Commands Reference
 

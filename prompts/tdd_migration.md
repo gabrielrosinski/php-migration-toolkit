@@ -3,7 +3,7 @@
 # RALPH WIGGUM PROMPT
 #
 # Usage:
-#   /ralph-loop "$(cat prompts/tdd_migration.md)" \
+#   /ralph-wiggum:ralph-loop "$(cat prompts/tdd_migration.md)" \
 #     --completion-promise "TDD_COMPLETE" \
 #     --max-iterations 50
 #

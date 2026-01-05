@@ -3,7 +3,7 @@
 # RALPH WIGGUM PROMPT
 #
 # Usage:
-#   /ralph-loop "$(cat prompts/generate_service.md)" \
+#   /ralph-wiggum:ralph-loop "$(cat prompts/generate_service.md)" \
 #     --completion-promise "SERVICE_COMPLETE" \
 #     --max-iterations 50
 #

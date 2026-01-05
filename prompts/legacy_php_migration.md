@@ -3,7 +3,7 @@
 # RALPH WIGGUM PROMPT
 #
 # Usage:
-#   /ralph-loop "$(cat prompts/legacy_php_migration.md)" \
+#   /ralph-wiggum:ralph-loop "$(cat prompts/legacy_php_migration.md)" \
 #     --completion-promise "SERVICE_COMPLETE" \
 #     --max-iterations 60
 #

@@ -1248,7 +1248,7 @@ phase6_design() {
     echo ""
     echo "  To run the design phase with Ralph Wiggum:"
     echo ""
-    echo -e "  ${CYAN}/ralph-loop \"\$(cat $OUTPUT_DIR/prompts/system_design_prompt.md)\" \\${NC}"
+    echo -e "  ${CYAN}/ralph-wiggum:ralph-loop\"\$(cat $OUTPUT_DIR/prompts/system_design_prompt.md)\" \\${NC}"
     echo -e "  ${CYAN}  --completion-promise \"DESIGN_COMPLETE\" \\${NC}"
     echo -e "  ${CYAN}  --max-iterations 50${NC}"
     echo ""
@@ -1268,7 +1268,7 @@ phase6_design() {
 
 1. Run the design prompt:
    ```bash
-   /ralph-loop "$(cat prompts/system_design_prompt.md)" \
+   /ralph-wiggum:ralph-loop "$(cat prompts/system_design_prompt.md)" \
      --completion-promise "DESIGN_COMPLETE" \
      --max-iterations 40
    ```
@@ -1324,14 +1324,14 @@ phase7_generation() {
     echo "  After completing system design (Phase 5), for each service run:"
     echo ""
     echo -e "  ${CYAN}# For main gateway service:${NC}"
-    echo -e "  ${CYAN}/ralph-loop \"\$(cat prompts/legacy_php_migration.md)\" \\${NC}"
+    echo -e "  ${CYAN}/ralph-wiggum:ralph-loop\"\$(cat prompts/legacy_php_migration.md)\" \\${NC}"
     echo -e "  ${CYAN}  --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
     echo ""
 
     # Check if extracted services exist
     if [ -f "$OUTPUT_DIR/analysis/extracted_services.json" ]; then
         echo -e "  ${CYAN}# For extracted microservices (inside Claude Code):${NC}"
-        echo -e "  ${CYAN}/ralph-loop \"\$(cat prompts/extract_service.md)\" --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
+        echo -e "  ${CYAN}/ralph-wiggum:ralph-loop\"\$(cat prompts/extract_service.md)\" --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
         echo ""
     fi
 
@@ -1360,7 +1360,7 @@ phase8_testing() {
     echo ""
     echo "  After generating services, validate each with:"
     echo ""
-    echo -e "  ${CYAN}/ralph-loop \"\$(cat prompts/full_validation.md)\" \\${NC}"
+    echo -e "  ${CYAN}/ralph-wiggum:ralph-loop\"\$(cat prompts/full_validation.md)\" \\${NC}"
     echo -e "  ${CYAN}  --completion-promise \"VALIDATION_COMPLETE\" \\${NC}"
     echo -e "  ${CYAN}  --max-iterations 40${NC}"
     echo ""
@@ -1427,7 +1427,7 @@ summary() {
     echo ""
     echo "2. SYSTEM DESIGN (Research + Architecture in One Step)"
     echo -e "   ${CYAN}cd $OUTPUT_DIR${NC}"
-    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/system_design_prompt.md)\" --completion-promise \"DESIGN_COMPLETE\" --max-iterations 50${NC}"
+    echo -e "   ${CYAN}/ralph-wiggum:ralph-loop\"\$(cat prompts/system_design_prompt.md)\" --completion-promise \"DESIGN_COMPLETE\" --max-iterations 50${NC}"
     echo ""
     echo "   This will automatically:"
     echo "   - Research NestJS best practices (creates NESTJS_BEST_PRACTICES.md)"
@@ -1441,15 +1441,15 @@ summary() {
     echo ""
     echo "4. SERVICE GENERATION (After Creating Workspace)"
     echo "   For main gateway service:"
-    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/legacy_php_migration.md)\" --completion-promise \"SERVICE_COMPLETE\"${NC}"
+    echo -e "   ${CYAN}/ralph-wiggum:ralph-loop\"\$(cat prompts/legacy_php_migration.md)\" --completion-promise \"SERVICE_COMPLETE\"${NC}"
     if [ -f "$OUTPUT_DIR/analysis/extracted_services.json" ]; then
         echo ""
         echo "   For each extracted microservice (inside Claude Code):"
-        echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/extract_service.md)\" --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
+        echo -e "   ${CYAN}/ralph-wiggum:ralph-loop\"\$(cat prompts/extract_service.md)\" --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
     fi
     echo ""
     echo "5. VALIDATION (After Each Service, inside Claude Code)"
-    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/full_validation.md)\" --completion-promise \"VALIDATION_COMPLETE\" --max-iterations 40${NC}"
+    echo -e "   ${CYAN}/ralph-wiggum:ralph-loop\"\$(cat prompts/full_validation.md)\" --completion-promise \"VALIDATION_COMPLETE\" --max-iterations 40${NC}"
     echo ""
     echo -e "${GREEN}Good luck with your migration!${NC}"
     echo ""

@@ -24,7 +24,8 @@
       "Bash(source $HOME/.nvm/nvm.sh)",
       "Bash(nvm ls:*)",
       "Bash(npx nx:*)",
-      "Bash(do sed -i '' 's/\"\"assets\"\": \\\\[.*\\\\]/\"\"assets\"\": []/g' \"$f\")"
+      "Bash(do sed -i '' 's/\"\"assets\"\": \\\\[.*\\\\]/\"\"assets\"\": []/g' \"$f\")",
+      "Skill(ralph-wiggum:ralph-loop)"
     ]
   }
 }

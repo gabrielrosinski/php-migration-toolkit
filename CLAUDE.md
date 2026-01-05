@@ -71,11 +71,11 @@ claude "$(cat prompts/migration_report_generator.md)"
 ### AI-Assisted Migration (Ralph Wiggum Loops)
 ```bash
 # Service migration (write code → test → fix → iterate)
-/ralph-loop "$(cat prompts/legacy_php_migration.md)" \
+/ralph-wiggum:ralph-loop "$(cat prompts/legacy_php_migration.md)" \
   --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 
 # Validation (run tests → fix issues → re-run)
-/ralph-loop "$(cat prompts/full_validation.md)" \
+/ralph-wiggum:ralph-loop "$(cat prompts/full_validation.md)" \
   --completion-promise "VALIDATION_COMPLETE" --max-iterations 40
 ```
 
@@ -119,7 +119,7 @@ output/services/{service-name}/
 ```
 # After Nx workspace is created, implement each extracted service
 # The prompt reads context from output/services/{service}/analysis/service_context.json
-/ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+/ralph-wiggum:ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 ### Manual Submodule Extraction (Optional)
@@ -252,7 +252,7 @@ This single command runs **8 automated phases**:
 ### Step 2: Architecture Design (Research + Design in One Step)
 ```bash
 # Using Ralph Wiggum loop (recommended)
-/ralph-loop "$(cat prompts/system_design_architect.md)" \
+/ralph-wiggum:ralph-loop "$(cat prompts/system_design_architect.md)" \
   --completion-promise "DESIGN_COMPLETE" --max-iterations 50
 
 # Or manually with Claude
@@ -286,19 +286,19 @@ This automatically:
 ### Step 4: Migrate Services
 **Main gateway:**
 ```bash
-/ralph-loop "$(cat prompts/legacy_php_migration.md)" \
+/ralph-wiggum:ralph-loop "$(cat prompts/legacy_php_migration.md)" \
   --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 **Extracted microservices:**
 ```
 # The prompt reads context from output/services/{service}/analysis/service_context.json
-/ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+/ralph-wiggum:ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 ### Step 5: Validation
 ```bash
-/ralph-loop "$(cat prompts/full_validation.md)" \
+/ralph-wiggum:ralph-loop "$(cat prompts/full_validation.md)" \
   --completion-promise "VALIDATION_COMPLETE" --max-iterations 40
 ```
 
