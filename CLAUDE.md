@@ -116,11 +116,10 @@ output/services/{service-name}/
 **Services Manifest:** `output/analysis/extracted_services.json` lists all extracted services with their metadata.
 
 ### Implement Extracted Microservice (Ralph Wiggum Loop)
-```bash
+```
 # After Nx workspace is created, implement each extracted service
-/ralph-loop "$(cat prompts/extract_service.md)" \
-  --context output/services/auth-service/analysis/service_context.json \
-  --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+# The prompt reads context from output/services/{service}/analysis/service_context.json
+/ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 ### Manual Submodule Extraction (Optional)
@@ -292,10 +291,9 @@ This automatically:
 ```
 
 **Extracted microservices:**
-```bash
-/ralph-loop "$(cat prompts/extract_service.md)" \
-  --context output/services/auth-service/analysis/service_context.json \
-  --completion-promise "SERVICE_COMPLETE"
+```
+# The prompt reads context from output/services/{service}/analysis/service_context.json
+/ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 ### Step 5: Validation

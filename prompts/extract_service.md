@@ -334,10 +334,8 @@ nx generate @nx/nest:application auth-service
 # 3. Import shared library
 # Add to tsconfig paths: "@contracts/auth-service": ["libs/contracts/auth-service/src"]
 
-# 4. Run this prompt
-/ralph-loop "$(cat prompts/extract_service.md)" \
-  --context output/services/auth-service/analysis/service_context.json \
-  --completion-promise "SERVICE_COMPLETE"
+# 4. Run this prompt (reads context from output/services/{service}/analysis/service_context.json)
+/ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 
 # 5. Start the service
 nx serve auth-service

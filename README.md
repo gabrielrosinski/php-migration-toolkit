@@ -316,29 +316,26 @@ nx generate @nx/nest:application users-service
 
 ### Step 5: Migrate Services (Ralph Wiggum Loop)
 
+> **Note:** `/ralph-loop` is a Claude Code slash command. Run it inside Claude Code, not in your terminal.
+
 **For the main gateway:**
-```bash
-/ralph-loop "$(cat prompts/legacy_php_migration.md)" \
-  --completion-promise "SERVICE_COMPLETE" \
-  --max-iterations 60
+```
+/ralph-loop "$(cat prompts/legacy_php_migration.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 **For extracted microservices (if submodules were found):**
-```bash
-# Each extracted service has its own context file
-/ralph-loop "$(cat prompts/extract_service.md)" \
-  --context output/services/auth-service/analysis/service_context.json \
-  --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+```
+# First, read the service context, then run the loop
+# The prompt will read from output/services/{service}/analysis/service_context.json
+/ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 Uses iterative loop because: write code → test → fix errors → repeat until passing.
 
 ### Step 6: Validate (Ralph Wiggum Loop)
 
-```bash
-/ralph-loop "$(cat prompts/full_validation.md)" \
-  --completion-promise "VALIDATION_COMPLETE" \
-  --max-iterations 40
+```
+/ralph-loop "$(cat prompts/full_validation.md)" --completion-promise "VALIDATION_COMPLETE" --max-iterations 40
 ```
 
 Uses iterative loop because: run tests → fix failures → re-run until all pass.

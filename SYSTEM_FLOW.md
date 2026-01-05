@@ -220,11 +220,11 @@ Reality:
 │  For extracted submodules (separate microservices):                 │
 │                                                                      │
 │  ┌────────────────────────────────────────────────────────────┐    │
-│  │ $ /ralph-loop "$(cat prompts/extract_service.md)" \        │    │
-│  │     --context output/services/auth-service/analysis/ \     │    │
-│  │         service_context.json \                             │    │
-│  │     --completion-promise "SERVICE_COMPLETE" \              │    │
-│  │     --max-iterations 60                                    │    │
+│  │ /ralph-loop "$(cat prompts/extract_service.md)" \          │    │
+│  │   --completion-promise "SERVICE_COMPLETE" --max-iterations 60    │
+│  │                                                            │    │
+│  │ (Run inside Claude Code - the prompt reads context from    │    │
+│  │  output/services/{service}/analysis/service_context.json)  │    │
 │  │                                                            │    │
 │  │ Claude reads service_context.json and implements:          │    │
 │  │ - NestJS microservice with TCP transport                   │    │

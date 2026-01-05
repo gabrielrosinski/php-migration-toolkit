@@ -1330,10 +1330,8 @@ phase7_generation() {
 
     # Check if extracted services exist
     if [ -f "$OUTPUT_DIR/analysis/extracted_services.json" ]; then
-        echo -e "  ${CYAN}# For extracted microservices:${NC}"
-        echo -e "  ${CYAN}/ralph-loop \"\$(cat prompts/extract_service.md)\" \\${NC}"
-        echo -e "  ${CYAN}  --context output/services/{service}/analysis/service_context.json \\${NC}"
-        echo -e "  ${CYAN}  --completion-promise \"SERVICE_COMPLETE\"${NC}"
+        echo -e "  ${CYAN}# For extracted microservices (inside Claude Code):${NC}"
+        echo -e "  ${CYAN}/ralph-loop \"\$(cat prompts/extract_service.md)\" --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
         echo ""
     fi
 
@@ -1446,13 +1444,12 @@ summary() {
     echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/legacy_php_migration.md)\" --completion-promise \"SERVICE_COMPLETE\"${NC}"
     if [ -f "$OUTPUT_DIR/analysis/extracted_services.json" ]; then
         echo ""
-        echo "   For each extracted microservice:"
-        echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/extract_service.md)\" \\${NC}"
-        echo -e "   ${CYAN}  --context output/services/{service}/analysis/service_context.json${NC}"
+        echo "   For each extracted microservice (inside Claude Code):"
+        echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/extract_service.md)\" --completion-promise \"SERVICE_COMPLETE\" --max-iterations 60${NC}"
     fi
     echo ""
-    echo "5. VALIDATION (After Each Service)"
-    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/full_validation.md)\" --completion-promise \"VALIDATION_COMPLETE\"${NC}"
+    echo "5. VALIDATION (After Each Service, inside Claude Code)"
+    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/full_validation.md)\" --completion-promise \"VALIDATION_COMPLETE\" --max-iterations 40${NC}"
     echo ""
     echo -e "${GREEN}Good luck with your migration!${NC}"
     echo ""
