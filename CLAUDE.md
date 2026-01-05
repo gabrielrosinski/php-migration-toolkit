@@ -37,7 +37,7 @@ This is a **Legacy PHP to NestJS Migration Toolkit** that automates the analysis
 ### Individual Analysis Scripts
 ```bash
 # PHP code analysis (functions, classes, security, complexity)
-python scripts/extract_legacy_php.py <php_dir> --output analysis.json --format json
+python scripts/extract_legacy_php.py <php_dir> --output json > analysis.json
 
 # Route extraction (.htaccess, nginx, PHP routing)
 python scripts/extract_routes.py <php_dir> --output routes.json --nginx /path/to/nginx.conf
@@ -132,6 +132,35 @@ If you need to re-extract specific submodules or use different transport:
   --transport grpc  # or tcp (default), http
 ```
 
+### Create Nx Workspace (Automated - Single Command)
+After running analysis, create the complete Nx workspace with one command:
+```bash
+# Create Nx workspace based on analysis (creates at same level as source project)
+./scripts/create_nx_workspace.sh -o ./output
+
+# Specify custom project name
+./scripts/create_nx_workspace.sh -o ./output -n my-ecommerce-api
+
+# Specify custom target directory
+./scripts/create_nx_workspace.sh -o ./output -t /path/to/workspace
+
+# Preview what would be created (dry run)
+./scripts/create_nx_workspace.sh -o ./output --dry-run
+
+# Skip npm install for faster creation
+./scripts/create_nx_workspace.sh -o ./output --skip-install
+```
+
+**What it creates:**
+- Nx workspace with NestJS preset
+- Gateway app (main HTTP API)
+- Microservice app for each extracted submodule
+- Shared libraries: `shared-dto`, `database`, `common`
+- Contract libraries per microservice
+- Copies TypeORM entities from analysis
+- Database configuration with TypeORM
+- `.env.example` with all required variables
+
 ### Nx Workspace Commands
 ```bash
 nx graph                                    # View dependency graph
@@ -150,6 +179,7 @@ nx generate @nx/nest:library <name>        # Create shared lib
 migration-toolkit/
 ├── scripts/                    # Analysis automation
 │   ├── master_migration.sh     # Orchestrates all phases (resume/skip support)
+│   ├── create_nx_workspace.sh  # Creates Nx workspace from analysis (Step 3)
 │   ├── extract_legacy_php.py   # PHP analysis + security scanning
 │   ├── extract_routes.py       # Multi-source route extraction
 │   ├── extract_database.py     # SQL → TypeORM entity generation
@@ -215,27 +245,44 @@ This single command runs **8 automated phases**:
 | 2 | Route extraction from .htaccess/nginx/PHP |
 | 3 | Database schema → TypeORM entities |
 | **4** | **Submodule extraction → NestJS microservices** (automatic if submodules exist) |
-| 5 | NestJS best practices research (BEFORE design) |
+| 5 | *(Integrated into Phase 6)* |
 | 6 | System design guidance |
 | 7 | Service generation guidance |
 | 8 | Testing guidance |
 
-### Step 2: Architecture Design
+### Step 2: Architecture Design (Research + Design in One Step)
 ```bash
+# Using Ralph Wiggum loop (recommended)
+/ralph-loop "$(cat prompts/system_design_architect.md)" \
+  --completion-promise "DESIGN_COMPLETE" --max-iterations 50
+
+# Or manually with Claude
 claude "$(cat prompts/system_design_architect.md)"
 ```
+This step automatically:
+1. **Researches NestJS best practices** using Context7 (creates `NESTJS_BEST_PRACTICES.md`)
+2. **Designs Nx monorepo architecture** (creates `ARCHITECTURE.md`)
 - Reads analysis output including extracted services
-- Outputs `ARCHITECTURE.md` with Nx apps/libs structure
 - **Extracted submodules are automatically included as microservice apps**
 
-### Step 3: Create Nx Workspace
+### Step 3: Create Nx Workspace (Automated - Single Command)
 ```bash
-npx create-nx-workspace@latest my-project --preset=nest
-nx generate @nx/nest:library shared-dto
-nx generate @nx/nest:library database
-# For each extracted submodule:
-nx generate @nx/nest:application auth-service
+# Creates complete Nx workspace with all apps and libs
+./scripts/create_nx_workspace.sh -o ./output
+
+# Or with custom name
+./scripts/create_nx_workspace.sh -o ./output -n my-ecommerce-api
 ```
+
+This automatically:
+- Creates Nx workspace with NestJS preset at same level as source project
+- Creates gateway app (main HTTP API)
+- Creates microservice app for each extracted submodule
+- Creates shared libraries (`shared-dto`, `database`, `common`)
+- Creates contract libraries per microservice
+- Copies TypeORM entities from analysis
+- Sets up database configuration
+- Installs required dependencies
 
 ### Step 4: Migrate Services
 **Main gateway:**
@@ -317,3 +364,4 @@ mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
 - **SYSTEM_FLOW.md**: Detailed workflow with diagrams, iteration expectations
 - **MICROSERVICES_PATTERNS.md**: Strangler Fig, Saga, Circuit Breaker patterns
 - **docs/TROUBLESHOOTING.md**: Solutions for common migration issues
+- **docs/KNOWLEDGEBASE.md**: Bug fixes and technical decisions documented during development

@@ -939,19 +939,41 @@ phase4_submodules() {
         echo -e "  ${BLUE}Analyzing submodule...${NC}"
 
         if [ -f "$SCRIPT_DIR/extract_legacy_php.py" ]; then
-            run_with_spinner "Analyzing PHP code in $submodule" 300 \
-                python3 "$SCRIPT_DIR/extract_legacy_php.py" \
+            start_spinner "Analyzing PHP code in $submodule"
+            local analysis_stderr=$(mktemp)
+            if python3 "$SCRIPT_DIR/extract_legacy_php.py" \
                     "$submodule_path" \
-                    --output "$service_output/analysis/legacy_analysis.json" \
-                    --format json || echo -e "  ${YELLOW}!${NC} PHP analysis failed (continuing)"
+                    --output json \
+                    > "$service_output/analysis/legacy_analysis.json" 2>"$analysis_stderr"; then
+                stop_spinner "success" "Analyzing PHP code in $submodule"
+            else
+                stop_spinner "fail" "Analyzing PHP code in $submodule - FAILED"
+                if [ -s "$analysis_stderr" ]; then
+                    echo -e "  ${RED}Error:${NC}"
+                    sed 's/^/    /' "$analysis_stderr"
+                fi
+                echo -e "  ${YELLOW}!${NC} PHP analysis failed (continuing)"
+            fi
+            rm -f "$analysis_stderr"
         fi
 
         if [ -f "$SCRIPT_DIR/extract_routes.py" ]; then
-            run_with_spinner "Extracting routes from $submodule" 120 \
-                python3 "$SCRIPT_DIR/extract_routes.py" \
+            start_spinner "Extracting routes from $submodule"
+            local routes_stderr=$(mktemp)
+            if python3 "$SCRIPT_DIR/extract_routes.py" \
                     "$submodule_path" \
-                    --output "$service_output/analysis/routes.json" \
-                    --format json || echo -e "  ${YELLOW}!${NC} Route extraction failed (continuing)"
+                    --output json \
+                    > "$service_output/analysis/routes.json" 2>"$routes_stderr"; then
+                stop_spinner "success" "Extracting routes from $submodule"
+            else
+                stop_spinner "fail" "Extracting routes from $submodule - FAILED"
+                if [ -s "$routes_stderr" ]; then
+                    echo -e "  ${RED}Error:${NC}"
+                    sed 's/^/    /' "$routes_stderr"
+                fi
+                echo -e "  ${YELLOW}!${NC} Route extraction failed (continuing)"
+            fi
+            rm -f "$routes_stderr"
         fi
 
         # Phase E3: Call Contract Analysis
@@ -968,6 +990,8 @@ phase4_submodules() {
         if [ -f "$SCRIPT_DIR/submodules/analyze_call_contract.py" ]; then
             run_with_spinner "Analyzing call contracts" 300 \
                 python3 "$SCRIPT_DIR/submodules/analyze_call_contract.py" \
+                    --project-root "$PROJECT_ROOT" \
+                    --submodule "$submodule" \
                     --submodule-analysis "$service_output/analysis/legacy_analysis.json" \
                     --call-points "$service_output/contracts/call_points.json" \
                     --output "$service_output/contracts/call_contract.json" || true
@@ -979,6 +1003,8 @@ phase4_submodules() {
         if [ -f "$SCRIPT_DIR/submodules/analyze_data_ownership.py" ]; then
             run_with_spinner "Analyzing data ownership" 180 \
                 python3 "$SCRIPT_DIR/submodules/analyze_data_ownership.py" \
+                    --project-root "$PROJECT_ROOT" \
+                    --submodule "$submodule" \
                     --submodule-analysis "$service_output/analysis/legacy_analysis.json" \
                     --main-analysis "$OUTPUT_DIR/analysis/legacy_analysis.json" \
                     --output "$service_output/data/data_ownership.json" || true
@@ -990,10 +1016,11 @@ phase4_submodules() {
         if [ -f "$SCRIPT_DIR/submodules/analyze_performance_impact.py" ]; then
             run_with_spinner "Analyzing performance impact" 180 \
                 python3 "$SCRIPT_DIR/submodules/analyze_performance_impact.py" \
+                    --project-root "$PROJECT_ROOT" \
+                    --submodule "$submodule" \
                     --call-points "$service_output/contracts/call_points.json" \
-                    --output-analysis "$service_output/observability/performance_analysis.json" \
-                    --output-prometheus "$service_output/observability/prometheus_metrics.yaml" \
-                    --service-name "$service_name" || true
+                    --output "$service_output/observability/performance_analysis.json" \
+                    --prometheus-output "$service_output/observability/prometheus_metrics.yaml" || true
         fi
 
         # Phase E6: Service Artifacts Generation
@@ -1002,9 +1029,9 @@ phase4_submodules() {
         if [ -f "$SCRIPT_DIR/submodules/generate_service_contract.py" ]; then
             run_with_spinner "Generating service contract" 120 \
                 python3 "$SCRIPT_DIR/submodules/generate_service_contract.py" \
+                    --submodule "$submodule" \
                     --call-contract "$service_output/contracts/call_contract.json" \
                     --transport "$TRANSPORT" \
-                    --service-name "$service_name" \
                     --output "$service_output/contracts/service_contract.json" || true
         fi
 
@@ -1012,7 +1039,6 @@ phase4_submodules() {
             run_with_spinner "Generating shared DTO library" 120 \
                 python3 "$SCRIPT_DIR/submodules/generate_shared_library.py" \
                     --service-contract "$service_output/contracts/service_contract.json" \
-                    --service-name "$service_name" \
                     --output-dir "$service_output/shared-lib" || true
         fi
 
@@ -1020,7 +1046,7 @@ phase4_submodules() {
             run_with_spinner "Generating resilience configuration" 60 \
                 python3 "$SCRIPT_DIR/submodules/generate_resilience_config.py" \
                     --service-name "$service_name" \
-                    --output-dir "$service_output/resilience" || true
+                    --output "$service_output/resilience/circuit_breaker.json" || true
         fi
 
         if [ -f "$SCRIPT_DIR/submodules/generate_health_checks.py" ]; then
@@ -1034,14 +1060,16 @@ phase4_submodules() {
             run_with_spinner "Generating contract tests" 120 \
                 python3 "$SCRIPT_DIR/submodules/generate_contract_tests.py" \
                     --service-contract "$service_output/contracts/service_contract.json" \
-                    --service-name "$service_name" \
+                    --call-contract "$service_output/contracts/call_contract.json" \
                     --output "$service_output/tests/contract/${service_name}.pact.json" || true
         fi
 
         if [ -f "$SCRIPT_DIR/submodules/generate_migration_mapping.py" ]; then
             run_with_spinner "Generating migration mapping" 120 \
                 python3 "$SCRIPT_DIR/submodules/generate_migration_mapping.py" \
-                    --call-contract "$service_output/contracts/call_contract.json" \
+                    --service-name "$service_name" \
+                    --submodule "$submodule" \
+                    --call-points "$service_output/contracts/call_points.json" \
                     --service-contract "$service_output/contracts/service_contract.json" \
                     --output "$service_output/contracts/migration_mapping.json" || true
         fi
@@ -1065,9 +1093,10 @@ EOF
         if [ -f "$SCRIPT_DIR/submodules/generate_service_context.py" ]; then
             run_with_spinner "Generating service context for LLM" 120 \
                 python3 "$SCRIPT_DIR/submodules/generate_service_context.py" \
-                    --service-dir "$service_output" \
                     --service-name "$service_name" \
-                    --transport "$TRANSPORT" \
+                    --submodule "$submodule" \
+                    --analysis-dir "$service_output/analysis" \
+                    --contracts-dir "$service_output/contracts" \
                     --output "$service_output/analysis/service_context.json" || true
         fi
 
@@ -1161,34 +1190,26 @@ EOF
 }
 
 # ============================================================================
-# PHASE 5: NESTJS BEST PRACTICES RESEARCH (Before Design!)
+# PHASE 5: (INTEGRATED INTO PHASE 6)
+# NestJS best practices research is now part of the system design prompt.
+# This phase is kept for backwards compatibility but just marks as complete.
 # ============================================================================
 phase5_research() {
     if ! should_run_phase 5; then
-        echo -e "${YELLOW}⏭ Skipping Phase 5: NestJS Best Practices${NC}"
+        echo -e "${YELLOW}⏭ Skipping Phase 5${NC}"
         return 0
     fi
 
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}▶ PHASE 5: NestJS Best Practices Research${NC}"
+    echo -e "${GREEN}▶ PHASE 5: NestJS Best Practices (Integrated into Phase 6)${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "${YELLOW}Research best practices BEFORE designing architecture${NC}"
+    echo -e "  ${GREEN}✓${NC} Best practices research is now integrated into the system design prompt"
+    echo -e "  ${GREEN}✓${NC} Phase 6 will research NestJS patterns before designing architecture"
     echo ""
 
-    cp "$TOOLKIT_ROOT/prompts/nestjs_best_practices_research.md" "$OUTPUT_DIR/prompts/"
-
-    echo "  Best practices research prompt: $OUTPUT_DIR/prompts/nestjs_best_practices_research.md"
-    echo ""
-    echo "  Run this FIRST to compile NestJS patterns:"
-    echo ""
-    echo -e "  ${CYAN}/ralph-loop \"\$(cat $OUTPUT_DIR/prompts/nestjs_best_practices_research.md)\" \\${NC}"
-    echo -e "  ${CYAN}  --completion-promise \"RESEARCH_COMPLETE\" \\${NC}"
-    echo -e "  ${CYAN}  --max-iterations 20${NC}"
-    echo ""
-
-    save_state 5 "ready"
-    echo -e "${GREEN}✓ Phase 5 Prepared${NC}"
+    save_state 5 "integrated"
+    echo -e "${GREEN}✓ Phase 5 Complete (integrated into Phase 6)${NC}"
     echo ""
 }
 
@@ -1208,7 +1229,7 @@ phase6_design() {
     echo -e "${YELLOW}This phase requires AI assistance (Claude Code + Ralph Wiggum)${NC}"
     echo ""
 
-    # Copy the design prompt (it now references files directly instead of inline JSON)
+    # Copy the design prompt (includes research + design phases)
     cp "$TOOLKIT_ROOT/prompts/system_design_architect.md" "$OUTPUT_DIR/prompts/system_design_prompt.md"
 
     # Verify required input files exist
@@ -1221,11 +1242,15 @@ phase6_design() {
 
     echo "  Prepared design prompt: $OUTPUT_DIR/prompts/system_design_prompt.md"
     echo ""
+    echo -e "  ${YELLOW}This prompt includes TWO phases:${NC}"
+    echo "  1. Research NestJS best practices (creates NESTJS_BEST_PRACTICES.md)"
+    echo "  2. Design Nx monorepo architecture (creates ARCHITECTURE.md)"
+    echo ""
     echo "  To run the design phase with Ralph Wiggum:"
     echo ""
     echo -e "  ${CYAN}/ralph-loop \"\$(cat $OUTPUT_DIR/prompts/system_design_prompt.md)\" \\${NC}"
     echo -e "  ${CYAN}  --completion-promise \"DESIGN_COMPLETE\" \\${NC}"
-    echo -e "  ${CYAN}  --max-iterations 40${NC}"
+    echo -e "  ${CYAN}  --max-iterations 50${NC}"
     echo ""
     echo "  Or manually with Claude:"
     echo ""
@@ -1402,20 +1427,21 @@ summary() {
     echo "   - Complexity factors"
     echo "   - Recommended service boundaries"
     echo ""
-    echo "2. RESEARCH BEST PRACTICES (Do First!)"
+    echo "2. SYSTEM DESIGN (Research + Architecture in One Step)"
     echo -e "   ${CYAN}cd $OUTPUT_DIR${NC}"
-    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/nestjs_best_practices_research.md)\" --completion-promise \"RESEARCH_COMPLETE\" --max-iterations 20${NC}"
+    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/system_design_prompt.md)\" --completion-promise \"DESIGN_COMPLETE\" --max-iterations 50${NC}"
     echo ""
-    echo "3. SYSTEM DESIGN (After Research)"
-    echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/system_design_prompt.md)\" --completion-promise \"DESIGN_COMPLETE\" --max-iterations 40${NC}"
+    echo "   This will automatically:"
+    echo "   - Research NestJS best practices (creates NESTJS_BEST_PRACTICES.md)"
+    echo "   - Design Nx monorepo architecture (creates ARCHITECTURE.md)"
     if [ -f "$OUTPUT_DIR/analysis/extracted_services.json" ]; then
         echo -e "   ${GREEN}Note: Extracted microservices will be automatically included in the design${NC}"
     fi
     echo ""
-    echo "4. CREATE NX WORKSPACE (After Design Approval)"
+    echo "3. CREATE NX WORKSPACE (After Design Approval)"
     echo -e "   ${CYAN}npx create-nx-workspace@latest my-project --preset=nest${NC}"
     echo ""
-    echo "5. SERVICE GENERATION (After Creating Workspace)"
+    echo "4. SERVICE GENERATION (After Creating Workspace)"
     echo "   For main gateway service:"
     echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/legacy_php_migration.md)\" --completion-promise \"SERVICE_COMPLETE\"${NC}"
     if [ -f "$OUTPUT_DIR/analysis/extracted_services.json" ]; then
@@ -1425,7 +1451,7 @@ summary() {
         echo -e "   ${CYAN}  --context output/services/{service}/analysis/service_context.json${NC}"
     fi
     echo ""
-    echo "6. VALIDATION (After Each Service)"
+    echo "5. VALIDATION (After Each Service)"
     echo -e "   ${CYAN}/ralph-loop \"\$(cat prompts/full_validation.md)\" --completion-promise \"VALIDATION_COMPLETE\"${NC}"
     echo ""
     echo -e "${GREEN}Good luck with your migration!${NC}"

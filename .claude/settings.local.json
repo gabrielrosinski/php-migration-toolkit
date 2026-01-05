@@ -5,7 +5,26 @@
       "mcp__context7__resolve-library-id",
       "WebSearch",
       "Bash(ls:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(pip3 install:*)",
+      "Bash(brew install:*)",
+      "Bash(cat:*)",
+      "Bash(node:*)",
+      "Bash(npm --version)",
+      "Bash(npm cache clean:*)",
+      "Bash(npx nx generate:*)",
+      "Bash(npm install:*)",
+      "Bash(for:*)",
+      "Bash(do name=$f%.entity.ts)",
+      "Bash(echo \"export * from ''''./$name.entity'''';\")",
+      "Bash(done)",
+      "Bash(./scripts/create_nx_workspace.sh:*)",
+      "Bash(npm view:*)",
+      "Bash(npx create-nx-workspace@22.3.3:*)",
+      "Bash(source $HOME/.nvm/nvm.sh)",
+      "Bash(nvm ls:*)",
+      "Bash(npx nx:*)",
+      "Bash(do sed -i '' 's/\"\"assets\"\": \\\\[.*\\\\]/\"\"assets\"\": []/g' \"$f\")"
     ]
   }
 }

@@ -126,42 +126,58 @@ def analyze_call_frequencies(call_points: Dict) -> List[CallFrequency]:
         'locations': []
     })
 
-    # Process class usages
+    # Process class usages (support both old and new key formats)
     for usage in call_points.get('class_usages', []):
         class_name = usage.get('class_name', '')
+        usage_file = usage.get('file') or usage.get('caller_file')
+        usage_line = usage.get('line') or usage.get('caller_line')
 
         # Method calls
         for call in usage.get('method_calls', []):
-            key = f"{class_name}::{call['method']}"
+            method_name = call.get('method') or call.get('method_name')
+            if not method_name:
+                continue
+            key = f"{class_name}::{method_name}"
             method_calls[key]['total_calls'] += 1
-            method_calls[key]['callers'].add(usage['file'])
+            if usage_file:
+                method_calls[key]['callers'].add(usage_file)
             method_calls[key]['locations'].append({
-                'file': usage['file'],
-                'line': call.get('line'),
+                'file': usage_file,
+                'line': call.get('line') or call.get('caller_line') or usage_line,
                 'type': 'method_call'
             })
             method_calls[key]['class_name'] = class_name
 
         # Static calls
         for call in usage.get('static_calls', []):
-            key = f"{class_name}::{call['method']}"
+            method_name = call.get('method') or call.get('method_name')
+            if not method_name:
+                continue
+            key = f"{class_name}::{method_name}"
             method_calls[key]['total_calls'] += 1
-            method_calls[key]['callers'].add(usage['file'])
+            if usage_file:
+                method_calls[key]['callers'].add(usage_file)
             method_calls[key]['locations'].append({
-                'file': usage['file'],
-                'line': call.get('line'),
+                'file': usage_file,
+                'line': call.get('line') or call.get('caller_line') or usage_line,
                 'type': 'static_call'
             })
             method_calls[key]['class_name'] = class_name
 
     # Process function calls
+    # Support both old format (function, file, line) and new format (function_name, caller_file, caller_line)
     for call in call_points.get('function_calls', []):
-        key = call['function']
+        key = call.get('function') or call.get('function_name')
+        if not key:
+            continue
+        caller_file = call.get('file') or call.get('caller_file')
+        caller_line = call.get('line') or call.get('caller_line')
         method_calls[key]['total_calls'] += 1
-        method_calls[key]['callers'].add(call['file'])
+        if caller_file:
+            method_calls[key]['callers'].add(caller_file)
         method_calls[key]['locations'].append({
-            'file': call['file'],
-            'line': call.get('line'),
+            'file': caller_file,
+            'line': caller_line,
             'type': 'function_call'
         })
         method_calls[key]['class_name'] = None
@@ -201,12 +217,14 @@ def detect_loop_calls(
     """Detect method calls within loops (N+1 query patterns)."""
     loop_analyses = []
 
-    # Get all caller files
+    # Get all caller files (support both old and new key formats)
     caller_files = set()
     for usage in call_points.get('class_usages', []):
-        caller_files.add(usage['file'])
+        caller_files.add(usage.get('file') or usage.get('caller_file'))
     for call in call_points.get('function_calls', []):
-        caller_files.add(call['file'])
+        caller_file = call.get('file') or call.get('caller_file')
+        if caller_file:
+            caller_files.add(caller_file)
 
     for file_path in caller_files:
         full_path = project_root / file_path
@@ -235,18 +253,20 @@ def detect_loop_calls(
 
                     # Check if any submodule methods are called
                     for usage in call_points.get('class_usages', []):
-                        if usage['file'] != file_path:
+                        usage_file = usage.get('file') or usage.get('caller_file')
+                        if usage_file != file_path:
                             continue
 
                         for call in usage.get('method_calls', []) + usage.get('static_calls', []):
-                            if call['method'] in loop_block:
+                            method_name = call.get('method') or call.get('method_name')
+                            if method_name and method_name in loop_block:
                                 loop_analyses.append(LoopAnalysis(
                                     file=file_path,
                                     line=line_num,
-                                    method=call['method'],
+                                    method=method_name,
                                     loop_type=loop_type,
                                     estimated_iterations='variable',
-                                    batch_recommendation=f"Consider creating bulk{call['method'].title()} method"
+                                    batch_recommendation=f"Consider creating bulk{method_name.title()} method"
                                 ))
 
     return loop_analyses
@@ -341,7 +361,9 @@ def identify_batch_opportunities(
         elif freq.total_calls >= 3:
             file_groups = defaultdict(list)
             for loc in freq.call_locations:
-                file_groups[loc['file']].append(loc)
+                loc_file = loc.get('file')
+                if loc_file:
+                    file_groups[loc_file].append(loc)
 
             for file, locs in file_groups.items():
                 if len(locs) >= 3:

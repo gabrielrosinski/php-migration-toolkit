@@ -320,23 +320,48 @@ for entry in "${VALID_SUBMODULES[@]}"; do
     echo -e "${BLUE}Phase E2: Submodule Analysis${NC}"
 
     # Run PHP analysis on submodule
+    # Note: extract_legacy_php.py outputs to stdout, --output sets format (json|markdown)
     if [ -f "$PARENT_SCRIPT_DIR/extract_legacy_php.py" ]; then
-        run_with_spinner "Analyzing PHP code in $submodule" 300 \
-            python3 "$PARENT_SCRIPT_DIR/extract_legacy_php.py" \
+        start_spinner "Analyzing PHP code in $submodule"
+        analysis_stderr=$(mktemp)
+        if python3 "$PARENT_SCRIPT_DIR/extract_legacy_php.py" \
                 "$submodule_path" \
-                --output "$service_output/analysis/legacy_analysis.json" \
-                --format json
+                --output json \
+                > "$service_output/analysis/legacy_analysis.json" 2>"$analysis_stderr"; then
+            stop_spinner "success" "Analyzing PHP code in $submodule"
+        else
+            stop_spinner "fail" "Analyzing PHP code in $submodule - FAILED"
+            echo -e "  ${RED}━━━ ERROR DETAILS ━━━${NC}"
+            if [ -s "$analysis_stderr" ]; then
+                sed 's/^/    /' "$analysis_stderr"
+            fi
+            echo -e "  ${RED}━━━━━━━━━━━━━━━━━━━━━${NC}"
+        fi
+        rm -f "$analysis_stderr"
     else
         echo -e "  ${YELLOW}!${NC} Skipping PHP analysis (extract_legacy_php.py not found)"
     fi
 
     # Run route extraction on submodule
+    # Note: extract_routes.py outputs to stdout, so we capture it to a file
     if [ -f "$PARENT_SCRIPT_DIR/extract_routes.py" ]; then
-        run_with_spinner "Extracting routes from $submodule" 120 \
-            python3 "$PARENT_SCRIPT_DIR/extract_routes.py" \
+        start_spinner "Extracting routes from $submodule"
+        routes_stderr=$(mktemp)
+        if python3 "$PARENT_SCRIPT_DIR/extract_routes.py" \
                 "$submodule_path" \
-                --output "$service_output/analysis/routes.json" \
-                --format json
+                --output json \
+                > "$service_output/analysis/routes.json" 2>"$routes_stderr"; then
+            stop_spinner "success" "Extracting routes from $submodule"
+        else
+            stop_spinner "fail" "Extracting routes from $submodule - FAILED"
+            echo -e "  ${RED}━━━ ERROR DETAILS ━━━${NC}"
+            if [ -s "$routes_stderr" ]; then
+                sed 's/^/    /' "$routes_stderr"
+            fi
+            echo -e "  ${RED}━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "  ${YELLOW}!${NC} Route extraction failed (continuing)"
+        fi
+        rm -f "$routes_stderr"
     else
         echo -e "  ${YELLOW}!${NC} Skipping route extraction (extract_routes.py not found)"
     fi
@@ -361,11 +386,17 @@ for entry in "${VALID_SUBMODULES[@]}"; do
 
     # Analyze call contracts (input/output preservation)
     if [ -f "$SCRIPT_DIR/analyze_call_contract.py" ]; then
-        run_with_spinner "Analyzing call contracts" 300 \
-            python3 "$SCRIPT_DIR/analyze_call_contract.py" \
-                --submodule-analysis "$service_output/analysis/legacy_analysis.json" \
-                --call-points "$service_output/contracts/call_points.json" \
-                --output "$service_output/contracts/call_contract.json"
+        if [ -f "$service_output/analysis/legacy_analysis.json" ] && [ -s "$service_output/analysis/legacy_analysis.json" ]; then
+            run_with_spinner "Analyzing call contracts" 300 \
+                python3 "$SCRIPT_DIR/analyze_call_contract.py" \
+                    --project-root "$PROJECT_ROOT" \
+                    --submodule "$submodule" \
+                    --submodule-analysis "$service_output/analysis/legacy_analysis.json" \
+                    --call-points "$service_output/contracts/call_points.json" \
+                    --output "$service_output/contracts/call_contract.json"
+        else
+            echo -e "  ${YELLOW}!${NC} Skipping call contract analysis (submodule analysis not available)"
+        fi
     else
         echo -e "  ${YELLOW}!${NC} Skipping call contract analysis (analyze_call_contract.py not found)"
     fi
@@ -380,6 +411,8 @@ for entry in "${VALID_SUBMODULES[@]}"; do
     if [ -f "$SCRIPT_DIR/analyze_data_ownership.py" ]; then
         run_with_spinner "Analyzing data ownership" 180 \
             python3 "$SCRIPT_DIR/analyze_data_ownership.py" \
+                --project-root "$PROJECT_ROOT" \
+                --submodule "$submodule" \
                 --submodule-analysis "$service_output/analysis/legacy_analysis.json" \
                 --main-analysis "$OUTPUT_DIR/analysis/legacy_analysis.json" \
                 --output "$service_output/data/data_ownership.json"
@@ -397,10 +430,11 @@ for entry in "${VALID_SUBMODULES[@]}"; do
     if [ -f "$SCRIPT_DIR/analyze_performance_impact.py" ]; then
         run_with_spinner "Analyzing performance impact" 180 \
             python3 "$SCRIPT_DIR/analyze_performance_impact.py" \
+                --project-root "$PROJECT_ROOT" \
+                --submodule "$submodule" \
                 --call-points "$service_output/contracts/call_points.json" \
-                --output-analysis "$service_output/observability/performance_analysis.json" \
-                --output-prometheus "$service_output/observability/prometheus_metrics.yaml" \
-                --service-name "$service_name"
+                --output "$service_output/observability/performance_analysis.json" \
+                --prometheus-output "$service_output/observability/prometheus_metrics.yaml"
     else
         echo -e "  ${YELLOW}!${NC} Skipping performance analysis (analyze_performance_impact.py not found)"
     fi
@@ -414,23 +448,30 @@ for entry in "${VALID_SUBMODULES[@]}"; do
 
     # Generate service contract
     if [ -f "$SCRIPT_DIR/generate_service_contract.py" ]; then
-        run_with_spinner "Generating service contract" 120 \
-            python3 "$SCRIPT_DIR/generate_service_contract.py" \
-                --call-contract "$service_output/contracts/call_contract.json" \
-                --transport "$TRANSPORT" \
-                --service-name "$service_name" \
-                --output "$service_output/contracts/service_contract.json"
+        if [ -f "$service_output/contracts/call_contract.json" ]; then
+            run_with_spinner "Generating service contract" 120 \
+                python3 "$SCRIPT_DIR/generate_service_contract.py" \
+                    --submodule "$submodule" \
+                    --call-contract "$service_output/contracts/call_contract.json" \
+                    --transport "$TRANSPORT" \
+                    --output "$service_output/contracts/service_contract.json"
+        else
+            echo -e "  ${YELLOW}!${NC} Skipping service contract generation (call contract not available)"
+        fi
     else
         echo -e "  ${YELLOW}!${NC} Skipping service contract generation"
     fi
 
     # Generate shared library structure
     if [ -f "$SCRIPT_DIR/generate_shared_library.py" ]; then
-        run_with_spinner "Generating shared DTO library" 120 \
-            python3 "$SCRIPT_DIR/generate_shared_library.py" \
-                --service-contract "$service_output/contracts/service_contract.json" \
-                --service-name "$service_name" \
-                --output-dir "$service_output/shared-lib"
+        if [ -f "$service_output/contracts/service_contract.json" ]; then
+            run_with_spinner "Generating shared DTO library" 120 \
+                python3 "$SCRIPT_DIR/generate_shared_library.py" \
+                    --service-contract "$service_output/contracts/service_contract.json" \
+                    --output-dir "$service_output/shared-lib"
+        else
+            echo -e "  ${YELLOW}!${NC} Skipping shared DTO library (service contract not available)"
+        fi
     else
         echo -e "  ${YELLOW}!${NC} Skipping shared library generation"
     fi
@@ -440,7 +481,7 @@ for entry in "${VALID_SUBMODULES[@]}"; do
         run_with_spinner "Generating resilience configuration" 60 \
             python3 "$SCRIPT_DIR/generate_resilience_config.py" \
                 --service-name "$service_name" \
-                --output-dir "$service_output/resilience"
+                --output "$service_output/resilience/circuit_breaker.json"
     else
         echo -e "  ${YELLOW}!${NC} Skipping resilience config generation"
     fi
@@ -457,22 +498,32 @@ for entry in "${VALID_SUBMODULES[@]}"; do
 
     # Generate contract tests
     if [ -f "$SCRIPT_DIR/generate_contract_tests.py" ]; then
-        run_with_spinner "Generating contract tests" 120 \
-            python3 "$SCRIPT_DIR/generate_contract_tests.py" \
-                --service-contract "$service_output/contracts/service_contract.json" \
-                --service-name "$service_name" \
-                --output "$service_output/tests/contract/${service_name}.pact.json"
+        if [ -f "$service_output/contracts/service_contract.json" ] && [ -f "$service_output/contracts/call_contract.json" ]; then
+            run_with_spinner "Generating contract tests" 120 \
+                python3 "$SCRIPT_DIR/generate_contract_tests.py" \
+                    --service-contract "$service_output/contracts/service_contract.json" \
+                    --call-contract "$service_output/contracts/call_contract.json" \
+                    --output "$service_output/tests/contract/${service_name}.pact.json"
+        else
+            echo -e "  ${YELLOW}!${NC} Skipping contract tests (contracts not available)"
+        fi
     else
         echo -e "  ${YELLOW}!${NC} Skipping contract test generation"
     fi
 
     # Generate migration mapping
     if [ -f "$SCRIPT_DIR/generate_migration_mapping.py" ]; then
-        run_with_spinner "Generating migration mapping" 120 \
-            python3 "$SCRIPT_DIR/generate_migration_mapping.py" \
-                --call-contract "$service_output/contracts/call_contract.json" \
-                --service-contract "$service_output/contracts/service_contract.json" \
-                --output "$service_output/contracts/migration_mapping.json"
+        if [ -f "$service_output/contracts/service_contract.json" ]; then
+            run_with_spinner "Generating migration mapping" 120 \
+                python3 "$SCRIPT_DIR/generate_migration_mapping.py" \
+                    --service-name "$service_name" \
+                    --submodule "$submodule" \
+                    --call-points "$service_output/contracts/call_points.json" \
+                    --service-contract "$service_output/contracts/service_contract.json" \
+                    --output "$service_output/contracts/migration_mapping.json"
+        else
+            echo -e "  ${YELLOW}!${NC} Skipping migration mapping (service contract not available)"
+        fi
     else
         echo -e "  ${YELLOW}!${NC} Skipping migration mapping generation"
     fi
@@ -497,9 +548,10 @@ EOF
     if [ -f "$SCRIPT_DIR/generate_service_context.py" ]; then
         run_with_spinner "Generating service context for LLM" 120 \
             python3 "$SCRIPT_DIR/generate_service_context.py" \
-                --service-dir "$service_output" \
                 --service-name "$service_name" \
-                --transport "$TRANSPORT" \
+                --submodule "$submodule" \
+                --analysis-dir "$service_output/analysis" \
+                --contracts-dir "$service_output/contracts" \
                 --output "$service_output/analysis/service_context.json"
     else
         echo -e "  ${YELLOW}!${NC} Skipping service context generation"

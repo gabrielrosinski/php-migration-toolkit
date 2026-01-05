@@ -43,6 +43,7 @@ This toolkit handles:
 migration-toolkit/
 ├── scripts/
 │   ├── master_migration.sh              # Orchestrates ALL analysis (8 phases)
+│   ├── create_nx_workspace.sh           # Creates Nx workspace from analysis
 │   ├── extract_legacy_php.py            # Analyzes PHP code + security scan
 │   ├── extract_routes.py                # Parses htaccess/nginx/PHP routes
 │   ├── extract_database.py              # Generates TypeORM entities from SQL
@@ -279,26 +280,38 @@ reports/
 └── INDEX.md                        # Links to all reports
 ```
 
-### Step 4: Create Nx Workspace
+### Step 4: Create Nx Workspace (Automated)
 
-Based on the architecture, create the Nx workspace and structure:
+One command creates the complete Nx workspace based on your analysis:
 
 ```bash
-# Create new Nx workspace with NestJS
+# Creates Nx workspace at same level as source project
+./scripts/create_nx_workspace.sh -o ./output
+
+# With custom project name
+./scripts/create_nx_workspace.sh -o ./output -n my-ecommerce-api
+
+# Preview what would be created (dry run)
+./scripts/create_nx_workspace.sh -o ./output --dry-run
+```
+
+**What it creates automatically:**
+- Nx workspace with NestJS preset
+- `gateway` app (main HTTP API)
+- Microservice app for each extracted submodule
+- Shared libraries: `shared-dto`, `database`, `common`
+- Contract libraries per microservice
+- TypeORM entities copied from analysis
+- Database configuration with environment variables
+- Required dependencies installed
+
+**Manual alternative (if needed):**
+```bash
 npx create-nx-workspace@latest my-project --preset=nest
 cd my-project
-
-# Create additional apps (gateway already exists from preset)
-nx generate @nx/nest:application users-service
-nx generate @nx/nest:application orders-service
-
-# Create shared libraries
 nx generate @nx/nest:library shared-dto
 nx generate @nx/nest:library database
-nx generate @nx/nest:library common
-
-# Verify setup
-nx graph
+nx generate @nx/nest:application users-service
 ```
 
 ### Step 5: Migrate Services (Ralph Wiggum Loop)
@@ -346,11 +359,11 @@ nx run-many --target=build --all
 ## Workflow Overview
 
 ```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Analyze   │ -> │   Design    │ -> │  Generate   │ -> │   Migrate   │ -> │  Validate   │ -> │   Deploy    │
-│  PHP Code   │    │ Architecture│    │   Reports   │    │  Services   │    │  & Test     │    │             │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-     auto            1 loop            1 loop          1 loop/service       1 loop/svc       nx affected
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Analyze   │ -> │   Design    │ -> │  Generate   │ -> │  Create Nx  │ -> │   Migrate   │ -> │  Validate   │ -> │   Deploy    │
+│  PHP Code   │    │ Architecture│    │   Reports   │    │  Workspace  │    │  Services   │    │  & Test     │    │             │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+     auto            1 prompt          1 prompt            auto           1 loop/service     1 loop/svc       nx affected
 ```
 
 See [SYSTEM_FLOW.md](./SYSTEM_FLOW.md) for detailed workflow.
@@ -360,6 +373,33 @@ See [SYSTEM_FLOW.md](./SYSTEM_FLOW.md) for detailed workflow.
 ### master_migration.sh
 
 Orchestrates the **complete analysis** with automatic discovery and submodule extraction.
+
+### create_nx_workspace.sh
+
+Creates a complete Nx workspace based on migration analysis.
+
+```bash
+./scripts/create_nx_workspace.sh -o <output_dir> [options]
+
+Required:
+  -o, --output <dir>     Migration output directory (contains analysis/)
+
+Options:
+  -n, --name <name>      Project name (default: derived from source project)
+  -t, --target <dir>     Target directory for Nx workspace
+  --skip-install         Skip npm install (faster, requires manual install)
+  --dry-run              Show what would be created without executing
+
+Creates:
+  - Nx workspace with NestJS preset
+  - Gateway app (main HTTP API)
+  - Microservice app for each extracted submodule
+  - Shared libraries (shared-dto, database, common)
+  - Contract libraries per microservice
+  - TypeORM entities from analysis
+  - Database configuration
+  - .env.example with required variables
+```
 
 ```bash
 ./scripts/master_migration.sh <php_dir> [options]
@@ -399,8 +439,13 @@ Analyzes PHP codebase for migration.
 python scripts/extract_legacy_php.py <php_dir> [options]
 
 Options:
-  --output <path>     JSON output file (default: stdout)
-  --format json|md    Output format
+  --output json|markdown    Output format (default: json)
+
+Output: stdout (redirect to file)
+
+Example:
+  python scripts/extract_legacy_php.py ./src --output json > analysis.json
+  python scripts/extract_legacy_php.py ./src --output markdown > analysis.md
 ```
 
 **Outputs:**

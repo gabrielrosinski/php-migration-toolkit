@@ -325,6 +325,80 @@ If health checks don't include database connectivity:
    }
    ```
 
+### `ModuleNotFoundError: No module named 'yaml'`
+
+The performance analysis script requires PyYAML. Install it:
+
+```bash
+# macOS with Homebrew Python
+pip3 install --break-system-packages pyyaml
+
+# Or if using virtual environment
+pip install pyyaml
+```
+
+### Submodule analysis file not found
+
+If you see an error like:
+```
+Error: Submodule analysis file not found: .../output/services/seo-service/analysis/legacy_analysis.json
+```
+
+This was a bug in `master_migration.sh` where the PHP analysis output wasn't being captured to the file correctly. The script passed wrong arguments to `extract_legacy_php.py`. The bug has been fixed. To resolve:
+
+1. Ensure you have the latest version of `master_migration.sh`
+2. Re-run the analysis:
+   ```bash
+   ./scripts/master_migration.sh /path/to/project -o ./output -r 4
+   ```
+3. Verify the file was created:
+   ```bash
+   ls -la output/services/*/analysis/legacy_analysis.json
+   ```
+
+**Technical details:** The bug was in `master_migration.sh` passing `--output <file> --format json` when `extract_legacy_php.py` expects `--output json` (format type) and outputs to stdout. The fix redirects stdout to the file.
+
+### Performance analysis script arguments error
+
+If you see an error like:
+```
+error: the following arguments are required: --project-root, --submodule
+```
+
+This was a bug in `master_migration.sh` where `analyze_performance_impact.py` was called with incorrect argument names. The bug has been fixed. Ensure you have the latest version.
+
+**Technical details:** The script was called with `--output-analysis`, `--output-prometheus`, `--service-name` instead of `--output`, `--prometheus-output`, and was missing required `--project-root` and `--submodule`.
+
+### KeyError in analyze_performance_impact.py
+
+If you see errors like:
+```
+KeyError: 'function'
+KeyError: 'file'
+```
+
+This was a data format mismatch between `detect_call_points.py` (which outputs `function_name`, `caller_file`) and `analyze_performance_impact.py` (which expected `function`, `file`). The script has been fixed to support both formats.
+
+If you encounter this, ensure you have the latest version of `analyze_performance_impact.py`.
+
+### Nx Workspace Creation Issues
+
+If you have trouble creating the Nx workspace manually, use the automated script:
+
+```bash
+./scripts/create_nx_workspace.sh -o ./output
+
+# Or preview what would be created
+./scripts/create_nx_workspace.sh -o ./output --dry-run
+```
+
+This script automatically:
+- Creates Nx workspace with NestJS preset
+- Generates all apps (gateway + extracted microservices)
+- Generates shared libraries (shared-dto, database, common)
+- Copies TypeORM entities from analysis
+- Installs required dependencies
+
 ---
 
 ## NestJS Build Issues

@@ -159,17 +159,29 @@ Reality:
 │                              │                                       │
 │                              ▼                                       │
 │                                                                      │
-│  STEP 2.5: SETUP NX STRUCTURE (Manual)                              │
-│  ═════════════════════════════════════                              │
+│  STEP 2.5: CREATE NX WORKSPACE (Automated - Single Command)        │
+│  ═══════════════════════════════════════════════════════════        │
 │                                                                      │
-│  Based on ARCHITECTURE.md, create Nx apps and libs:                 │
+│  $ ./scripts/create_nx_workspace.sh -o ./output                     │
 │                                                                      │
+│  This SINGLE COMMAND creates:                                        │
+│  ├── Nx workspace with NestJS preset                                │
+│  ├── Gateway app (main HTTP API)                                    │
+│  ├── Microservice app for each extracted submodule                  │
+│  ├── Shared libraries (shared-dto, database, common)                │
+│  ├── Contract libraries per microservice                            │
+│  ├── TypeORM entities copied from analysis                          │
+│  ├── Database configuration                                         │
+│  └── Required dependencies installed                                │
+│                                                                      │
+│  Options:                                                           │
+│  $ ./scripts/create_nx_workspace.sh -o ./output -n my-api           │
+│  $ ./scripts/create_nx_workspace.sh -o ./output --dry-run           │
+│                                                                      │
+│  Manual alternative (if needed):                                    │
 │  $ npx create-nx-workspace@latest my-project --preset=nest          │
 │  $ nx generate @nx/nest:library shared-dto                          │
 │  $ nx generate @nx/nest:library database                            │
-│  $ nx generate @nx/nest:library common                              │
-│                                                                      │
-│  Copy generated entities from output/entities/ to libs/database/    │
 │                                                                      │
 │                              │                                       │
 │                              ▼                                       │
@@ -533,4 +545,7 @@ A: Yes, using git worktrees for isolation. See Ralph Wiggum docs.
 A: They're documented in the analysis output and must be addressed during migration. The migration prompt includes patterns for fixing common vulnerabilities.
 
 **Q: How do I handle the generated TypeORM entities?**
-A: Copy them from `output/entities/` to `libs/database/src/entities/`, review and adjust as needed, then export from the library's index.ts.
+A: The `create_nx_workspace.sh` script automatically copies them to `libs/database/src/entities/`. If creating manually, copy from `output/database/entities/` to `libs/database/src/entities/`, review and adjust as needed, then export from the library's index.ts.
+
+**Q: Do I need to manually create the Nx workspace?**
+A: No! Run `./scripts/create_nx_workspace.sh -o ./output` to automatically create the complete Nx workspace with all apps, libs, entities, and configuration based on your analysis.

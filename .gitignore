@@ -1,0 +1,25 @@
+# Generated analysis output
+output/
+
+# Accidentally created workspace directories
+Users/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (if any test workspaces created locally)
+node_modules/
