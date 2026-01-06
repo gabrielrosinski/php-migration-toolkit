@@ -236,13 +236,19 @@ claude "$(cat prompts/system_design_architect.md)"
 # The prompt will read from output/analysis/architecture_context.json
 ```
 
-**Output:** `ARCHITECTURE.md` with:
-- Service catalog (which apps to create in Nx)
-- Shared libraries needed
-- Communication patterns
-- Authentication strategy (PHP sessions to JWT)
-- Data migration strategy
-- Migration priority order
+**Outputs:**
+
+1. `output/analysis/NESTJS_BEST_PRACTICES.md` - NestJS patterns research
+2. `output/analysis/ARCHITECTURE.md` - Complete architecture design
+3. **`migration-steps.md`** - All Ralph Wiggum commands for each module
+
+The `migration-steps.md` file contains explicit, module-specific Ralph Wiggum commands with:
+- Target location for each module
+- Legacy PHP files to migrate
+- Routes to implement
+- Database tables owned
+- Security issues to fix
+- Iteration estimates based on complexity
 
 ### Step 3: Generate Migration Reports (Single Prompt)
 
@@ -314,20 +320,42 @@ nx generate @nx/nest:library database
 nx generate @nx/nest:application users-service
 ```
 
-### Step 5: Migrate Services (Ralph Wiggum Loop)
+### Step 5: Migrate Services (Ralph Wiggum Loops)
 
 > **Note:** These are Claude Code skill commands. Run them inside Claude Code, not in your terminal.
 
-**For the main gateway:**
-```
-/ralph-wiggum:ralph-loop "$(cat prompts/legacy_php_migration.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+**Use the `migration-steps.md` file generated in Step 2.** It contains explicit commands for each module.
+
+```bash
+# Open migration-steps.md and run each command in order:
+
+# Example: Migrate Config module
+/ralph-wiggum:ralph-loop "
+Migrate the CONFIG module from legacy PHP to NestJS.
+
+**Target:** apps/gateway/src/modules/config/
+**Legacy PHP Files:** routes/config/index.php, routes/config/function/*.php
+**Routes:** GET /config, GET /settings, GET /new-config
+...
+" --completion-promise "SERVICE_COMPLETE" --max-iterations 25
+
+# Then: Migrate Categories module
+# Then: Migrate Products module
+# ... (see migration-steps.md for all commands)
 ```
 
-**For extracted microservices (if submodules were found):**
-```
-# The prompt reads context from output/services/{service}/analysis/service_context.json
-/ralph-wiggum:ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
-```
+**Why module-specific commands?**
+- Generic prompts (like `legacy_php_migration.md`) don't specify which module to migrate
+- The AI picks one thing, completes it, and exits the loop
+- Module-specific prompts ensure each module is fully migrated with tests
+
+**Each command includes:**
+- Explicit target location
+- List of legacy PHP files
+- List of routes to implement
+- Database tables owned
+- Security issues to fix
+- Test requirements (>80% coverage)
 
 Uses iterative loop because: write code → test → fix errors → repeat until passing.
 
@@ -359,8 +387,13 @@ nx run-many --target=build --all
 │   Analyze   │ -> │   Design    │ -> │  Generate   │ -> │  Create Nx  │ -> │   Migrate   │ -> │  Validate   │ -> │   Deploy    │
 │  PHP Code   │    │ Architecture│    │   Reports   │    │  Workspace  │    │  Services   │    │  & Test     │    │             │
 └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-     auto            1 prompt          1 prompt            auto           1 loop/service     1 loop/svc       nx affected
+     auto            1 prompt          1 prompt            auto           migration-steps.md  1 loop total     nx affected
+                     ↓                                                     (1 loop/module)
+              migration-steps.md
+              (generated here)
 ```
+
+**Key insight:** Step 2 generates `migration-steps.md` with explicit commands for each module. Step 5 executes those commands one by one.
 
 See [SYSTEM_FLOW.md](./SYSTEM_FLOW.md) for detailed workflow.
 
@@ -519,16 +552,19 @@ Options:
 
 | Prompt | Type | Purpose | Output |
 |--------|------|---------|--------|
-| `system_design_architect.md` | Single | Design Nx monorepo structure | `ARCHITECTURE.md` |
+| `system_design_architect.md` | Single | Design Nx monorepo structure | `ARCHITECTURE.md` + `migration-steps.md` |
 | `migration_report_generator.md` | Single | Generate comprehensive reports | `reports/` folder |
-| `legacy_php_migration.md` | Loop | Migrate main gateway | App code in `apps/gateway/` |
-| `extract_service.md` | Loop | Implement extracted microservice | App code in `apps/{service}/` |
+| `migration-steps.md` | Generated | Module-specific migration commands | Used in Step 5 |
+| `legacy_php_migration.md` | Template | Generic migration template | **Use migration-steps.md instead** |
+| `extract_service.md` | Template | Generic service template | **Use migration-steps.md instead** |
 | `generate_service.md` | Loop | Create new Nx app | App + tests |
 | `tdd_migration.md` | Loop | Test-driven migration | Tests + code |
 | `full_validation.md` | Loop | Validate service | Validation report |
 
 **Single** = One-shot prompt with `claude "$(cat prompt.md)"`
 **Loop** = Iterative with `/ralph-wiggum:ralph-loop` (for tasks requiring build/test cycles)
+**Generated** = Created by `system_design_architect.md` with explicit per-module commands
+**Template** = Generic template - use `migration-steps.md` for explicit commands instead
 
 ## Nx Commands Reference
 

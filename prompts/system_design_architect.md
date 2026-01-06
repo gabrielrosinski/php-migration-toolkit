@@ -14,16 +14,17 @@ You are a **Principal Software Architect** designing a **Nx monorepo architectur
 
 ---
 
-## TWO-PHASE WORKFLOW
+## THREE-PHASE WORKFLOW
 
-This prompt covers **two phases** that you must complete in order:
+This prompt covers **three phases** that you must complete in order:
 
 | Phase | Description | Output |
 |-------|-------------|--------|
 | **Phase 1: Research** | Research NestJS best practices using Context7 | `output/analysis/NESTJS_BEST_PRACTICES.md` |
 | **Phase 2: Design** | Design Nx monorepo architecture | `output/analysis/ARCHITECTURE.md` |
+| **Phase 3: Migration Steps** | Generate Ralph Wiggum loop commands | `migration-steps.md` |
 
-**You MUST complete Phase 1 before starting Phase 2.**
+**You MUST complete each phase before starting the next.**
 
 ---
 
@@ -797,6 +798,152 @@ Before completing, verify:
 - [ ] Data migration approach is documented
 - [ ] Global state mapping covers all PHP patterns found
 - [ ] Security issues from analysis are addressed in design
+
+---
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PHASE 3: MIGRATION STEPS GENERATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+After completing the architecture design, generate `migration-steps.md` with all Ralph Wiggum loop commands.
+
+## Purpose
+
+Each module/service needs its own Ralph Wiggum loop command because:
+- Generic prompts don't specify which module to migrate
+- The AI needs explicit scope: target location, files, routes, tables
+- Each loop must complete one specific module with tests
+- Progress can be tracked per module
+
+## Migration Steps File Structure
+
+Create `migration-steps.md` in the project root with:
+
+```markdown
+# Migration Steps - Ralph Wiggum Loop Commands
+
+## Prerequisites
+- Analysis complete
+- Nx workspace created
+- Ralph Wiggum plugin installed
+
+## Phase 1: Gateway Foundation
+### 1.1 [Module Name]
+/ralph-wiggum:ralph-loop "[explicit prompt]" --completion-promise "SERVICE_COMPLETE" --max-iterations N
+
+## Phase 2: Gateway Core Modules
+### 2.1 [Module Name]
+...
+
+## Phase 3: Extracted Microservices
+### 3.1 [Service Name]
+...
+
+## Phase 4: Integration & Validation
+### 4.1 Gateway Integration
+### 4.2 Full Validation
+### 4.3 E2E Tests
+
+## Progress Tracking
+- [ ] Phase 1 modules
+- [ ] Phase 2 modules
+- [ ] Phase 3 services
+- [ ] Phase 4 validation
+```
+
+## Generating Module-Specific Prompts
+
+For EACH module in your ARCHITECTURE.md, create an explicit prompt:
+
+### Template for Gateway Modules
+
+```
+/ralph-wiggum:ralph-loop "
+Migrate the [MODULE_NAME] module from legacy PHP to NestJS.
+
+**Target:** apps/gateway/src/modules/[module]/
+
+**Legacy PHP Files:**
+[List specific files from architecture_files.json for this domain]
+
+**Routes to implement:**
+[List specific routes from architecture_routes.json for this domain]
+
+**Database tables:** [if any]
+[List tables owned by this module from data ownership]
+
+**Security issues to fix:**
+[List security issues from architecture_security_db.json for this domain's files]
+
+**Requirements:**
+1. Create [Module]Module, [Module]Controller, [Module]Service
+2. [Domain-specific requirements]
+3. Create DTOs with validation
+4. Write unit tests with >80% coverage
+5. Run: nx test gateway --coverage
+
+Output SERVICE_COMPLETE when tests pass.
+" --completion-promise "SERVICE_COMPLETE" --max-iterations [N]
+```
+
+### Template for Extracted Microservices
+
+```
+/ralph-wiggum:ralph-loop "
+Implement the [SERVICE_NAME] microservice.
+
+**Context:** Read output/services/[service]/analysis/service_context.json
+
+**Target:** apps/[service]/src/
+
+**Message Patterns:** [from service_contract.json]
+
+**Database tables owned:** [from data_ownership.json]
+
+**Requirements:**
+1. Implement all message patterns from contract
+2. Create proper DTOs matching contract
+3. Set up health checks
+4. Write unit tests with >80% coverage
+5. Run: nx test [service] --coverage
+
+Output SERVICE_COMPLETE when tests pass.
+" --completion-promise "SERVICE_COMPLETE" --max-iterations [N]
+```
+
+## Iteration Estimates
+
+Assign iterations based on complexity from analysis:
+
+| Complexity (cyclomatic) | Lines | Est. Iterations |
+|-------------------------|-------|-----------------|
+| < 50 | < 200 | 10-15 |
+| 50-150 | 200-500 | 15-25 |
+| 150-300 | 500-1000 | 25-35 |
+| > 300 | > 1000 | 35-50 |
+
+## Required Sections in migration-steps.md
+
+1. **Prerequisites** - What must be done before running commands
+2. **Phase 1: Foundation** - Core modules (config, auth)
+3. **Phase 2: Core Modules** - All gateway modules from ARCHITECTURE.md
+4. **Phase 3: Microservices** - Each extracted service from extracted_services.json
+5. **Phase 4: Validation** - Integration, full validation, E2E tests
+6. **Progress Tracking** - Checkbox list for each step
+7. **Estimated Time** - Total iterations and estimated time
+8. **Quick Reference** - Common Nx commands
+9. **Troubleshooting** - Common issues and fixes
+
+## Validation
+
+Before completing, verify migration-steps.md includes:
+- [ ] Every module from ARCHITECTURE.md has a command
+- [ ] Every extracted service has a command
+- [ ] Each command has explicit file lists (not placeholders)
+- [ ] Each command has explicit route lists
+- [ ] Iteration estimates are based on complexity analysis
+- [ ] Progress tracking checkboxes match all steps
+- [ ] Validation phase is included
 
 ---
 

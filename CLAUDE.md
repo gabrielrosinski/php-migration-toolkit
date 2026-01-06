@@ -57,6 +57,13 @@ python scripts/generate_architecture_context.py \
 
 # Chunk large PHP files for context limits
 ./scripts/chunk_legacy_php.sh huge_file.php ./chunks 400
+
+# Generate condensed schema summary (87% smaller than full schema)
+python scripts/generate_schema_summary.py output/database/schema_inferred.json \
+  -o output/database/schema_summary.json \
+  --all-modules
+# Generates: schema_summary.json (18KB vs 143KB original)
+#            output/database/modules/schema_<module>.json for each module
 ```
 
 ### AI-Assisted Design & Documentation (Single Prompts)
@@ -69,15 +76,23 @@ claude "$(cat prompts/migration_report_generator.md)"
 ```
 
 ### AI-Assisted Migration (Ralph Wiggum Loops)
-```bash
-# Service migration (write code → test → fix → iterate)
-/ralph-wiggum:ralph-loop "$(cat prompts/legacy_php_migration.md)" \
-  --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 
-# Validation (run tests → fix issues → re-run)
-/ralph-wiggum:ralph-loop "$(cat prompts/full_validation.md)" \
-  --completion-promise "VALIDATION_COMPLETE" --max-iterations 40
+**Note:** Due to shell escaping issues with the `/ralph-wiggum:ralph-loop` skill, use the Bash tool directly with the setup script. Read the prompt file first, then pass the content inline (avoid shell special chars like `*`, `>`, `<`).
+
+```bash
+# General syntax (use Bash tool in Claude Code)
+"/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "YOUR PROMPT TEXT" --completion-promise "PROMISE" --max-iterations N
+
+# Cancel a running loop
+rm -f .claude/ralph-loop.local.md
 ```
+
+**Prompt files for common tasks:**
+- Service migration: `prompts/legacy_php_migration.md`
+- Validation: `prompts/full_validation.md`
+- Module-specific: `prompts/migration/<module>.md`
+
+See `migration-steps.md` for detailed per-module commands.
 
 ### Submodule Extraction (Automatic)
 
@@ -116,10 +131,11 @@ output/services/{service-name}/
 **Services Manifest:** `output/analysis/extracted_services.json` lists all extracted services with their metadata.
 
 ### Implement Extracted Microservice (Ralph Wiggum Loop)
-```
+```bash
 # After Nx workspace is created, implement each extracted service
-# The prompt reads context from output/services/{service}/analysis/service_context.json
-/ralph-wiggum:ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+# 1. Read prompt: prompts/extract_service.md
+# 2. Run with Bash tool (prompt reads context from output/services/{service}/analysis/service_context.json)
+"/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "YOUR PROMPT TEXT" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 ### Manual Submodule Extraction (Optional)
@@ -252,11 +268,9 @@ This single command runs **8 automated phases**:
 ### Step 2: Architecture Design (Research + Design in One Step)
 ```bash
 # Using Ralph Wiggum loop (recommended)
-/ralph-wiggum:ralph-loop "$(cat prompts/system_design_architect.md)" \
-  --completion-promise "DESIGN_COMPLETE" --max-iterations 50
-
-# Or manually with Claude
-claude "$(cat prompts/system_design_architect.md)"
+# 1. Read prompt: prompts/system_design_architect.md
+# 2. Run with Bash tool:
+"/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "YOUR PROMPT TEXT" --completion-promise "DESIGN_COMPLETE" --max-iterations 50
 ```
 This step automatically:
 1. **Researches NestJS best practices** using Context7 (creates `NESTJS_BEST_PRACTICES.md`)
@@ -286,20 +300,23 @@ This automatically:
 ### Step 4: Migrate Services
 **Main gateway:**
 ```bash
-/ralph-wiggum:ralph-loop "$(cat prompts/legacy_php_migration.md)" \
-  --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+# 1. Read prompt: prompts/legacy_php_migration.md
+# 2. Run with Bash tool:
+"/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "YOUR PROMPT TEXT" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 **Extracted microservices:**
-```
-# The prompt reads context from output/services/{service}/analysis/service_context.json
-/ralph-wiggum:ralph-loop "$(cat prompts/extract_service.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
+```bash
+# 1. Read prompt: prompts/extract_service.md (reads context from output/services/{service}/analysis/service_context.json)
+# 2. Run with Bash tool:
+"/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "YOUR PROMPT TEXT" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
 ### Step 5: Validation
 ```bash
-/ralph-wiggum:ralph-loop "$(cat prompts/full_validation.md)" \
-  --completion-promise "VALIDATION_COMPLETE" --max-iterations 40
+# 1. Read prompt: prompts/full_validation.md
+# 2. Run with Bash tool:
+"/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "YOUR PROMPT TEXT" --completion-promise "VALIDATION_COMPLETE" --max-iterations 40
 ```
 
 ### Step 6: Build & Deploy
@@ -363,3 +380,55 @@ mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
 - **MICROSERVICES_PATTERNS.md**: Strangler Fig, Saga, Circuit Breaker patterns
 - **docs/TROUBLESHOOTING.md**: Solutions for common migration issues
 - **docs/KNOWLEDGEBASE.md**: Bug fixes and technical decisions documented during development
+
+## ⚠️ MANDATORY: Reference Documents for Migration
+
+**CRITICAL RULE FOR ALL RALPH WIGGUM MIGRATION LOOPS:**
+
+Before implementing ANY module migration, you **MUST read these files using the Read tool**:
+
+### Required Reference Documents
+
+| File | Section | Line Range | What to Extract |
+|------|---------|------------|-----------------|
+| `output/analysis/ARCHITECTURE.md` | **Section 9: Routes** | Lines 820-970 | Exact routes for this module |
+| `output/analysis/ARCHITECTURE.md` | **Section 12: Security** | Lines 1248-1340 | crypto.randomBytes, bcrypt, validation |
+| `output/analysis/NESTJS_BEST_PRACTICES.md` | Full file | Lines 1-300 | Module patterns, security patterns |
+| `output/database/modules/schema_<module>.json` | Full file | All | Tables relevant to this module (condensed) |
+
+### Failure to Read = Failed Migration
+
+The migration is considered **FAILED** if these documents were not read before implementation because:
+1. Routes may not match the architecture specification
+2. Security requirements (e.g., `crypto.randomBytes()` vs `Math.random()`) will be missed
+3. NestJS patterns may not be followed correctly
+4. Database queries may not match the actual schema
+
+### Standardized Prompt Structure (TD-005)
+
+All 19 migration prompts in `prompts/migration/` follow a standardized structure:
+
+1. **FAILURE CONDITIONS** - Listed at top of each prompt
+2. **Explicit Read tool commands** with offset/limit parameters
+3. **Universal security filter** - Shows ALL security types, not path-filtered
+4. **Verification checklists** - Reference specific step numbers
+
+Example Read tool command format used in prompts:
+```
+Read tool parameters:
+  file_path: output/analysis/ARCHITECTURE.md
+  offset: 820
+  limit: 150
+```
+
+### How to Enforce This
+
+All module-specific prompts include explicit steps:
+- **Step 1.4**: READ ARCHITECTURE.md Section 9 (Routes) - offset: 820, limit: 150
+- **Step 1.5**: READ ARCHITECTURE.md Section 12 (Security) - offset: 1248, limit: 95
+- **Step 1.6**: READ NESTJS_BEST_PRACTICES.md - offset: 1, limit: 300
+- **Step 1.7**: READ schema_<module>.json (module-specific schema from output/database/modules/)
+
+**DO NOT skip these steps. DO NOT proceed to implementation until all reference documents are read.**
+
+See `docs/KNOWLEDGEBASE.md` TD-005 for the full standardization details.
