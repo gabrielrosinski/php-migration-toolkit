@@ -22,7 +22,7 @@ This prompt covers **three phases** that you must complete in order:
 |-------|-------------|--------|
 | **Phase 1: Research** | Research NestJS best practices using Context7 | `output/analysis/NESTJS_BEST_PRACTICES.md` |
 | **Phase 2: Design** | Design Nx monorepo architecture | `output/analysis/ARCHITECTURE.md` |
-| **Phase 3: Migration Steps** | Generate Ralph Wiggum loop commands | `migration-steps.md` |
+| **Phase 3: Migration Steps** | Generate Ralph Wiggum loop commands **(SKIP IF EXISTS)** | `migration-steps.md` (only if not present) |
 
 **You MUST complete each phase before starting the next.**
 
@@ -802,8 +802,38 @@ Before completing, verify:
 ---
 
 # ═══════════════════════════════════════════════════════════════════════════
-# PHASE 3: MIGRATION STEPS GENERATION
+# PHASE 3: MIGRATION STEPS (SKIP IF EXISTS)
 # ═══════════════════════════════════════════════════════════════════════════
+
+## ⚠️ CRITICAL: CHECK FOR EXISTING FILES FIRST
+
+**Before generating ANY migration files, check if they already exist:**
+
+```bash
+# Check if curated migration prompts exist
+ls prompts/migration/*.md 2>/dev/null | head -5
+
+# Check if migration-steps.md exists
+ls migration-steps.md 2>/dev/null
+```
+
+**IF THESE FILES EXIST:**
+1. **DO NOT overwrite them** - They contain manually curated, detailed prompts
+2. **DO NOT generate new prompts** - The existing ones have analysis-first approach, failure conditions, and specific instructions
+3. **SKIP Phase 3 entirely** and output "DESIGN_COMPLETE"
+4. If files were accidentally deleted, restore from backup:
+   ```bash
+   ./scripts/restore_migration_prompts.sh
+   ```
+
+**ONLY generate migration-steps.md and prompts IF:**
+- This is a fresh project with no existing prompts
+- The user explicitly requests regeneration
+- No files exist in prompts/migration/
+
+---
+
+## If Generation is Needed (Fresh Project Only)
 
 After completing the architecture design, generate `migration-steps.md` with all Ralph Wiggum loop commands.
 
@@ -829,14 +859,17 @@ Create `migration-steps.md` in the project root with:
 
 ## Phase 1: Gateway Foundation
 ### 1.1 [Module Name]
-/ralph-wiggum:ralph-loop "[explicit prompt]" --completion-promise "SERVICE_COMPLETE" --max-iterations N
+**Prompt:** `prompts/migration/1.1-[module].md`
+**Command:** See migration-steps.md
 
 ## Phase 2: Gateway Core Modules
 ### 2.1 [Module Name]
+**Prompt:** `prompts/migration/2.X-[module]-module.md`
 ...
 
 ## Phase 3: Extracted Microservices
 ### 3.1 [Service Name]
+**Prompt:** `prompts/migration/3.X-[service].md`
 ...
 
 ## Phase 4: Integration & Validation
@@ -851,14 +884,26 @@ Create `migration-steps.md` in the project root with:
 - [ ] Phase 4 validation
 ```
 
+## Command Format (IMPORTANT)
+
+**DO NOT use `/ralph-wiggum:ralph-loop` - it has shell escaping issues.**
+
+Use the Bash tool with the setup script:
+```bash
+"/path/to/ralph-wiggum/scripts/setup-ralph-loop.sh" "$(cat prompts/migration/X.X-module.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations N
+```
+
 ## Generating Module-Specific Prompts
 
-For EACH module in your ARCHITECTURE.md, create an explicit prompt:
+For EACH module in your ARCHITECTURE.md, create a **separate prompt file** in `prompts/migration/`:
 
 ### Template for Gateway Modules
 
-```
-/ralph-wiggum:ralph-loop "
+Create file: `prompts/migration/X.X-[module]-module.md`
+
+```markdown
+# [Module Name] Module Migration
+
 Migrate the [MODULE_NAME] module from legacy PHP to NestJS.
 
 **Target:** apps/gateway/src/modules/[module]/
@@ -883,13 +928,15 @@ Migrate the [MODULE_NAME] module from legacy PHP to NestJS.
 5. Run: nx test gateway --coverage
 
 Output SERVICE_COMPLETE when tests pass.
-" --completion-promise "SERVICE_COMPLETE" --max-iterations [N]
 ```
 
 ### Template for Extracted Microservices
 
-```
-/ralph-wiggum:ralph-loop "
+Create file: `prompts/migration/X.X-[service].md`
+
+```markdown
+# [Service Name] Migration
+
 Implement the [SERVICE_NAME] microservice.
 
 **Context:** Read output/services/[service]/analysis/service_context.json
@@ -908,7 +955,6 @@ Implement the [SERVICE_NAME] microservice.
 5. Run: nx test [service] --coverage
 
 Output SERVICE_COMPLETE when tests pass.
-" --completion-promise "SERVICE_COMPLETE" --max-iterations [N]
 ```
 
 ## Iteration Estimates

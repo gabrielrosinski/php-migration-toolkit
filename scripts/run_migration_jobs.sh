@@ -86,6 +86,17 @@ if ! command -v claude &> /dev/null; then
     exit 1
 fi
 
+# Detect timeout command (GNU timeout vs macOS gtimeout)
+TIMEOUT_CMD=""
+if command -v timeout &> /dev/null; then
+    TIMEOUT_CMD="timeout"
+elif command -v gtimeout &> /dev/null; then
+    TIMEOUT_CMD="gtimeout"
+else
+    echo -e "${YELLOW}Warning: timeout/gtimeout not found. Install with: brew install coreutils${NC}"
+    echo -e "${YELLOW}Running without timeout protection.${NC}"
+fi
+
 # Collect job files
 JOB_FILES=()
 
@@ -183,7 +194,13 @@ for job_file in "${JOB_FILES[@]}"; do
 
     # Use timeout and run claude with the job prompt
     # The --print flag makes it non-interactive, -p passes the prompt
-    if timeout "$TIMEOUT" claude --print --dangerously-skip-permissions -p "$job_content" > "$output_file" 2>&1; then
+    if [ -n "$TIMEOUT_CMD" ]; then
+        CLAUDE_CMD="$TIMEOUT_CMD $TIMEOUT claude --print --dangerously-skip-permissions -p \"\$job_content\""
+    else
+        CLAUDE_CMD="claude --print --dangerously-skip-permissions -p \"\$job_content\""
+    fi
+
+    if eval "$CLAUDE_CMD" > "$output_file" 2>&1; then
         end_time=$(date +%s)
         duration=$((end_time - start_time))
         output_size=$(wc -c < "$output_file" | tr -d ' ')

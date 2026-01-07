@@ -269,6 +269,7 @@ migration-toolkit/
 │   ├── chunk_legacy_php.sh     # Large file splitting at logical boundaries
 │   ├── generate_chunk_jobs.py  # Creates migration jobs from chunks
 │   ├── run_migration_jobs.sh   # Runs jobs in separate Claude sessions
+│   ├── restore_migration_prompts.sh  # Restore prompts from backup
 │   └── submodules/             # Submodule extraction scripts
 │       ├── extract_submodules.sh       # Main orchestration
 │       ├── validate_submodule.py       # Submodule validation
@@ -467,6 +468,53 @@ mcp__context7__query-docs(libraryId="<id>", query="<specific question>")
 - **MICROSERVICES_PATTERNS.md**: Strangler Fig, Saga, Circuit Breaker patterns
 - **docs/TROUBLESHOOTING.md**: Solutions for common migration issues
 - **docs/KNOWLEDGEBASE.md**: Bug fixes and technical decisions documented during development
+
+## ⚠️ PROTECTED FILES - DO NOT OVERWRITE
+
+**CRITICAL: The following files are curated and must NOT be overwritten or regenerated:**
+
+### Migration Prompts (prompts/migration/)
+These 20 detailed prompts were manually crafted with:
+- FAILURE CONDITIONS at the top
+- Explicit Read tool commands with offset/limit
+- Universal security filters
+- Verification checklists
+
+**Protected files:**
+```
+prompts/migration/
+├── 1.1-health.md
+├── 1.2-config-module.md
+├── 1.3-auth-module.md
+├── 2.1-categories-module.md through 2.14-user-settings-module.md
+├── 3.2-payment-service.md
+├── 4.1-gateway-integration.md
+├── 4.3-e2e-tests.md
+└── _template.md
+```
+
+### migration-steps.md
+Contains single-line Ralph Wiggum commands referencing the prompt files above.
+
+### If Files Are Accidentally Overwritten
+```bash
+# Restore from backup
+./scripts/restore_migration_prompts.sh
+
+# Preview what would be restored
+./scripts/restore_migration_prompts.sh --dry-run
+```
+
+### Step 2: Architecture Design - What It Should Create
+The `system_design_architect.md` prompt should ONLY create:
+- `output/analysis/ARCHITECTURE.md` - Architecture design document
+- `output/analysis/NESTJS_BEST_PRACTICES.md` - NestJS patterns reference
+
+It should **NOT** create or modify:
+- `migration-steps.md` (already exists with correct commands)
+- `prompts/migration/*.md` (already exist with detailed prompts)
+
+---
 
 ## ⚠️ MANDATORY: Reference Documents for Migration
 

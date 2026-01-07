@@ -39,7 +39,15 @@
       "Bash(jq:*)",
       "Bash(sort:*)",
       "Bash(bash /Users/user/Documents/pet-projects/php-migration-toolkit/scripts/chunk_legacy_php.sh:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(/Users/user/Documents/pet-projects/php-migration-toolkit/scripts/restore_migration_prompts.sh:*)",
+      "Bash(./scripts/run_migration_jobs.sh:*)",
+      "Bash(du -sh:*)",
+      "Bash(do sed -i '' 's/id: number;/id!: number;/g' \"$f\")",
+      "Bash(done)",
+      "Bash(do sed -i '' 's/uin: string;/uin!: string;/g' \"$f\")",
+      "Bash(do php_file=/Users/user/Documents/pet-projects/m-action/files/$file.php if [ -f $php_file ])",
+      "Bash(then echo '=== $file.php response fields ===' grep -oE \"$arr\\\\[''''[^'''']+''''\\\\]|$result\\\\[''''[^'''']+''''\\\\]|$data\\\\[''''[^'''']+''''\\\\]|$response\\\\[''''[^'''']+''''\\\\]\" $php_file)"
     ]
   }
 }

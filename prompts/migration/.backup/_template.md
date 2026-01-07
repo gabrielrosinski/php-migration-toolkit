@@ -1,0 +1,306 @@
+# {{MODULE_NAME}} Module Migration
+
+## CRITICAL: Analysis-First Approach
+
+**DO NOT START IMPLEMENTATION** until you have completed ALL mandatory analysis steps.
+
+⚠️ **FAILURE CONDITIONS - Migration will be rejected if:**
+- You skip reading ARCHITECTURE.md sections with the Read tool
+- You skip reading NESTJS_BEST_PRACTICES.md with the Read tool
+- You don't create a function mapping table
+- Security requirements are not applied
+
+---
+
+## DATA SOURCES (Must Read Before Implementation)
+
+### Primary Analysis Files (in output/ folder)
+| File | Purpose | What to Extract |
+|------|---------|-----------------|
+| `output/analysis/legacy_analysis.json` | PHP function analysis | Functions, parameters, DB calls, globals |
+| `output/analysis/routes.json` | Route mappings | HTTP method, NestJS path, query params |
+| `output/analysis/architecture_security_db.json` | Security issues | XSS, SQL injection, weak crypto |
+
+### Architecture Reference (MUST READ WITH Read TOOL)
+| File | Section | Line Range | Required Extractions |
+|------|---------|------------|---------------------|
+| `ARCHITECTURE.md` | **Section 9: Route Mapping** | Lines 820-970 | Routes for this module |
+| `ARCHITECTURE.md` | **Section 12: Security** | Lines 1248-1340 | crypto.randomBytes, bcrypt, validation |
+| `NESTJS_BEST_PRACTICES.md` | **Full file** | All | Patterns, decorators, testing |
+
+### Database (Import entities, don't recreate)
+| File | Purpose |
+|------|---------|
+| `output/database/entities/*.ts` | TypeORM entities - import from `@m-action-nestjs/database` |
+| `output/database/modules/schema_{{module_name}}.json` | Module-specific schema (condensed) |
+| `output/database/schema_summary.json` | Full schema summary if needed |
+
+---
+
+## PHASE 1: MANDATORY ANALYSIS (Must Complete Before Writing Code)
+
+### Step 1.1: Read PHP Source Files Analysis
+
+Execute this command to extract PHP functions for this module:
+
+```bash
+cat output/analysis/legacy_analysis.json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+
+# Target PHP files for this module
+target_files = {{PHP_FILES_LIST}}
+
+all_files = data.get('all_files', [])
+found_any = False
+for f in all_files:
+    path = f.get('path', '')
+    if any(t in path for t in target_files):
+        found_any = True
+        print(f'\\n=== {path.split(\"m-action/\")[-1]} ===')
+        print(f'Lines: {f.get(\"total_lines\")}')
+        for fn in f.get('functions', []):
+            params = ', '.join(fn.get('params', []))
+            db = '[DB]' if fn.get('calls_db') else ''
+            globals_used = fn.get('uses_globals', [])
+            print(f'  - {fn.get(\"name\")}({params}) {db}')
+            if globals_used:
+                print(f'    Globals: {globals_used}')
+
+if not found_any:
+    print('WARNING: No matching files found.')
+    print('Check ARCHITECTURE.md Section 9 for route definitions.')
+    print('Routes may be NEW endpoints not in legacy code.')
+"
+```
+
+### Step 1.2: Read Routes Analysis
+
+```bash
+cat output/analysis/routes.json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+
+target_files = {{PHP_FILES_LIST}}
+
+found_any = False
+for r in data.get('routes', []):
+    target = r.get('target_file', '')
+    if any(t in target for t in target_files):
+        found_any = True
+        print(f\"{r.get('nestjs_method')} {r.get('nestjs_path')} -> {target}\")
+        if r.get('query_params'):
+            print(f\"  Query params: {r.get('query_params')}\")
+
+if not found_any:
+    print('WARNING: No matching routes found in routes.json.')
+    print('Check ARCHITECTURE.md Section 9 for route definitions.')
+"
+```
+
+### Step 1.3: Read Security Issues
+
+**IMPORTANT:** Security issues affect modules even if files aren't named for this module.
+
+```bash
+cat output/analysis/architecture_security_db.json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+
+# Show ALL security types relevant to backend modules
+relevant_types = ['xss', 'sql_injection', 'command_injection', 'weak_crypto', 'insecure_function']
+
+print('=== SECURITY ISSUES TO ADDRESS ===')
+print()
+for issue_type in relevant_types:
+    details = data.get('security', {}).get('by_type', {}).get(issue_type, {})
+    affected = details.get('affected_files', [])
+    if affected:
+        print(f'{issue_type.upper()} ({len(affected)} files):')
+        for f in affected[:3]:
+            print(f'  - {f}')
+        if len(affected) > 3:
+            print(f'  ... and {len(affected) - 3} more')
+        if details.get('examples'):
+            ex = details['examples'][0]
+            print(f'  Remediation: {ex.get(\"recommendation\", \"N/A\")}')
+        print()
+"
+```
+
+### Step 1.4: READ ARCHITECTURE.md Section 9 - Routes (MANDATORY)
+
+**YOU MUST USE THE Read TOOL** to read this section:
+
+```
+Read tool parameters:
+  file_path: output/analysis/ARCHITECTURE.md
+  offset: 820
+  limit: 150
+```
+
+**Extract and document for this module:**
+- [ ] All routes that belong to {{MODULE_NAME}}
+- [ ] HTTP methods (GET, POST, PUT, DELETE)
+- [ ] Path parameters and query parameters
+- [ ] Response formats
+
+### Step 1.5: READ ARCHITECTURE.md Section 12 - Security (MANDATORY)
+
+**YOU MUST USE THE Read TOOL** to read this section:
+
+```
+Read tool parameters:
+  file_path: output/analysis/ARCHITECTURE.md
+  offset: 1248
+  limit: 95
+```
+
+**Extract and document:**
+- [ ] Use `crypto.randomBytes()` for tokens (NOT Math.random())
+- [ ] Use `bcrypt` for password hashing
+- [ ] Use TypeORM parameterized queries (NOT string concatenation)
+- [ ] Sanitize all user inputs
+
+### Step 1.6: READ NESTJS_BEST_PRACTICES.md (MANDATORY)
+
+**YOU MUST USE THE Read TOOL** to read the relevant section:
+
+```
+Read tool parameters:
+  file_path: output/analysis/NESTJS_BEST_PRACTICES.md
+  offset: 1
+  limit: 300
+```
+
+**Extract patterns for:**
+- [ ] Module structure
+- [ ] Service patterns
+- [ ] Controller patterns
+- [ ] DTO validation
+- [ ] Repository usage
+
+### Step 1.7: Read Database Schema (MANDATORY)
+
+**YOU MUST USE THE Read TOOL** to read the module-specific schema:
+
+```
+Read tool parameters:
+  file_path: output/database/modules/schema_{{module_name}}.json
+```
+
+This file contains only the tables relevant to this module (condensed format).
+
+**If you need additional tables**, read the full summary:
+```
+Read tool parameters:
+  file_path: output/database/schema_summary.json
+```
+
+### Step 1.8: Create Function Mapping Table
+
+Based on ALL the analysis above, create a complete mapping table:
+
+| PHP Function | Parameters | DB? | NestJS Method | Security Fix | Notes |
+|-------------|------------|-----|---------------|--------------|-------|
+| (from Step 1.1) | | | | | |
+
+**If Step 1.1 returned no functions:**
+Use routes from ARCHITECTURE.md Section 9 (Step 1.4) as your function mapping.
+
+---
+
+## PHASE 2: ARCHITECTURE CONTEXT
+
+### Routes to Implement (from ARCHITECTURE.md Section 9)
+
+{{ROUTES_TABLE}}
+
+### Entities to Use
+
+{{ENTITIES_LIST}}
+
+**IMPORTANT:** Import from `@m-action-nestjs/database`, do not recreate.
+
+### Security Requirements (from ARCHITECTURE.md Section 12)
+
+| Requirement | How to Implement |
+|-------------|------------------|
+| No weak crypto | Use `crypto.randomBytes()` for tokens |
+| Password hashing | Use `bcrypt` with salt rounds >= 10 |
+| SQL injection prevention | Use TypeORM Repository methods only |
+| XSS prevention | Use `class-transformer` @Expose/@Exclude |
+| Input validation | Use `class-validator` decorators on ALL DTOs |
+
+---
+
+## PHASE 3: IMPLEMENTATION
+
+**Only proceed after PHASE 1 and PHASE 2 are complete.**
+
+### Target Location
+- Module: `apps/gateway/src/modules/{{module_name}}/`
+- Project: `m-action-nestjs`
+
+### Implementation Requirements
+
+1. **Service Methods**: Implement ALL PHP functions from Phase 1 mapping
+2. **Controller Routes**: Map ALL routes from Phase 2
+3. **DTOs**: Create validated DTOs with `class-validator`
+4. **Caching**: Add `@nestjs/cache-manager` where PHP used Redis
+5. **Security**: Apply ALL security fixes from Section 12
+6. **Tests**: Unit tests with >80% coverage
+
+---
+
+## PHASE 4: VERIFICATION
+
+### Pre-Implementation Checklist
+
+**Analysis Steps (ALL REQUIRED):**
+- [ ] Step 1.1: Executed PHP function extraction
+- [ ] Step 1.2: Executed routes extraction
+- [ ] Step 1.3: Executed security issues extraction
+- [ ] **Step 1.4: READ ARCHITECTURE.md Section 9** (routes)
+- [ ] **Step 1.5: READ ARCHITECTURE.md Section 12** (security)
+- [ ] **Step 1.6: READ NESTJS_BEST_PRACTICES.md**
+- [ ] **Step 1.7: READ schema_{{module_name}}.json** (module-specific schema)
+- [ ] Step 1.8: Created complete function mapping table
+
+**Understanding Verified:**
+- [ ] All routes for this module identified
+- [ ] All database tables identified
+- [ ] Security requirements documented
+- [ ] NestJS patterns understood
+
+### Post-Implementation Checklist
+
+- [ ] All routes mapped in controller
+- [ ] All PHP functions have NestJS equivalents
+- [ ] DTOs have proper validation (`class-validator`)
+- [ ] Entities imported from `@m-action-nestjs/database`
+- [ ] Security fixes applied:
+  - [ ] `crypto.randomBytes()` used (NOT Math.random())
+  - [ ] TypeORM parameterized queries (NO string SQL)
+  - [ ] Input sanitization applied
+- [ ] Tests pass with >80% coverage
+
+### Validation Commands
+```bash
+npx nx test gateway --testPathPattern="{{module_name}}"
+npx nx build gateway
+```
+
+---
+
+## COMPLETION
+
+When ALL verifications pass:
+```
+SERVICE_COMPLETE
+```
+
+If stuck after analysis:
+```
+NEEDS_REVIEW: [describe the blocking issue]
+```

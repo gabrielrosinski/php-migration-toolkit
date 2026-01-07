@@ -1322,6 +1322,7 @@ if [ "$SKIP_INSTALL" = false ]; then
 
     echo -e "  ${CYAN}Installing dev dependencies...${NC}"
     npm install --save-dev --legacy-peer-deps \
+        "@nestjs/testing@^10.0.0" \
         @types/passport-jwt @types/bcrypt \
         2>&1 | grep -E "(added|npm warn|npm error)" || true
 
@@ -1335,6 +1336,7 @@ else
     echo "  npm install --legacy-peer-deps @nestjs/jwt @nestjs/passport passport passport-jwt"
     echo "  npm install --legacy-peer-deps class-validator class-transformer bcrypt uuid"
     echo "  npm install --legacy-peer-deps @nestjs/microservices@^10.0.0 @nestjs/terminus@^10.0.0"
+    echo "  npm install --save-dev --legacy-peer-deps @nestjs/testing@^10.0.0 @types/passport-jwt @types/bcrypt"
 fi
 
 echo ""
