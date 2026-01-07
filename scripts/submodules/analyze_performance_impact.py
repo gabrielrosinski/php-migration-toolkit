@@ -226,6 +226,7 @@ def detect_loop_calls(
         if caller_file:
             caller_files.add(caller_file)
 
+    skipped_files = []
     for file_path in caller_files:
         full_path = project_root / file_path
         if not full_path.exists():
@@ -235,7 +236,8 @@ def detect_loop_calls(
             with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
                 lines = content.split('\n')
-        except Exception:
+        except (OSError, IOError) as e:
+            skipped_files.append((str(full_path), str(e)))
             continue
 
         # Find loops and check for submodule calls inside
@@ -268,6 +270,13 @@ def detect_loop_calls(
                                     estimated_iterations='variable',
                                     batch_recommendation=f"Consider creating bulk{method_name.title()} method"
                                 ))
+
+    if skipped_files:
+        print(f"Warning: Skipped {len(skipped_files)} files in loop analysis due to read errors:", file=sys.stderr)
+        for filepath, error in skipped_files[:5]:  # Show first 5
+            print(f"  - {filepath}: {error}", file=sys.stderr)
+        if len(skipped_files) > 5:
+            print(f"  ... and {len(skipped_files) - 5} more", file=sys.stderr)
 
     return loop_analyses
 

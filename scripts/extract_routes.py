@@ -594,8 +594,8 @@ class DirectFileExtractor:
             if has_definitions and not has_output and not handles_request:
                 return True
 
-        except:
-            pass
+        except (OSError, IOError, UnicodeDecodeError) as e:
+            print(f"Warning: Could not read {filepath} to check if include file: {e}", file=sys.stderr)
 
         return False
 
@@ -623,7 +623,8 @@ class DirectFileExtractor:
                 methods.append('POST')
             if not methods:
                 methods = ['GET']
-        except:
+        except (OSError, IOError, UnicodeDecodeError) as e:
+            print(f"Warning: Could not read {filepath} to determine methods: {e}", file=sys.stderr)
             methods = ['GET']
 
         return Route(

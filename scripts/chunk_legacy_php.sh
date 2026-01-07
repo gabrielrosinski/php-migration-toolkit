@@ -4,6 +4,7 @@
 # Handles: procedural code, mixed HTML/PHP, include chains
 
 set -e
+set -o pipefail  # Ensure pipeline failures are caught
 
 FILE=$1
 OUTPUT_DIR=$2

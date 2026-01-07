@@ -35,7 +35,11 @@
       "Bash(__NEW_LINE__ echo \"\")",
       "Bash(__NEW_LINE__ echo \"   - output/analysis/NESTJS_BEST_PRACTICES.md\")",
       "Bash(__NEW_LINE__ echo \"   - app-auth-logs.entity.ts\")",
-      "Bash(__NEW_LINE__ echo \"   - app-devices.entity.ts\")"
+      "Bash(__NEW_LINE__ echo \"   - app-devices.entity.ts\")",
+      "Bash(jq:*)",
+      "Bash(sort:*)",
+      "Bash(bash /Users/user/Documents/pet-projects/php-migration-toolkit/scripts/chunk_legacy_php.sh:*)",
+      "Bash(chmod:*)"
     ]
   }
 }

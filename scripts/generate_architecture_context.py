@@ -438,43 +438,25 @@ def load_database_schema(db_dir: str) -> Dict:
 
     schema = None
 
-    # Try direct path first (if db_dir is the database directory itself)
-    schema_path = os.path.join(db_dir, 'schema_inferred.json')
-    if os.path.exists(schema_path):
-        try:
-            with open(schema_path, 'r', encoding='utf-8') as f:
-                schema = json.load(f)
-        except:
-            pass
+    # List of schema paths to try in order
+    schema_paths = [
+        os.path.join(db_dir, 'schema_inferred.json'),
+        os.path.join(db_dir, 'schema.json'),
+        os.path.join(db_dir, 'database', 'schema_inferred.json'),
+        os.path.join(db_dir, 'database', 'schema.json'),
+    ]
 
-    # Try schema.json in db_dir
-    if not schema:
-        schema_path = os.path.join(db_dir, 'schema.json')
+    for schema_path in schema_paths:
         if os.path.exists(schema_path):
             try:
                 with open(schema_path, 'r', encoding='utf-8') as f:
                     schema = json.load(f)
-            except:
-                pass
-
-    # Try nested database/ directory (if db_dir is the output directory)
-    if not schema:
-        schema_path = os.path.join(db_dir, 'database', 'schema_inferred.json')
-        if os.path.exists(schema_path):
-            try:
-                with open(schema_path, 'r', encoding='utf-8') as f:
-                    schema = json.load(f)
-            except:
-                pass
-
-    if not schema:
-        schema_path = os.path.join(db_dir, 'database', 'schema.json')
-        if os.path.exists(schema_path):
-            try:
-                with open(schema_path, 'r', encoding='utf-8') as f:
-                    schema = json.load(f)
-            except:
-                pass
+                if schema:
+                    break
+            except json.JSONDecodeError as e:
+                print(f"Warning: Failed to parse JSON in {schema_path}: {e}", file=sys.stderr)
+            except (OSError, IOError) as e:
+                print(f"Warning: Failed to read {schema_path}: {e}", file=sys.stderr)
 
     if not schema or not isinstance(schema.get('tables'), dict):
         return result

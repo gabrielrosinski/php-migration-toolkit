@@ -11,6 +11,7 @@
 # - Enhanced analysis with security scanning
 
 set -e
+set -o pipefail  # Ensure pipeline failures are caught
 
 # Colors
 RED='\033[0;31m'
@@ -640,15 +641,22 @@ phase1_analysis() {
                 while read -r large_file; do
                     if [ -n "$large_file" ]; then
                         BASENAME=$(basename "$large_file" .php)
-                        if ! "$SCRIPT_DIR/chunk_legacy_php.sh" "$PROJECT_ROOT/$large_file" "$OUTPUT_DIR/analysis/chunks/$BASENAME" 400 2>/dev/null; then
+                        CHUNK_OUTPUT=$("$SCRIPT_DIR/chunk_legacy_php.sh" "$PROJECT_ROOT/$large_file" "$OUTPUT_DIR/analysis/chunks/$BASENAME" 400 2>&1)
+                        CHUNK_EXIT=$?
+                        if [ $CHUNK_EXIT -ne 0 ]; then
                             echo -e "    ${YELLOW}!${NC} Failed to chunk: $large_file"
+                            echo -e "    ${YELLOW}  Error: ${CHUNK_OUTPUT}${NC}" | head -3
                             CHUNK_ERRORS=$((CHUNK_ERRORS + 1))
                         else
                             echo -e "    ${GREEN}✓${NC} Chunked: $large_file"
                         fi
                     fi
                 done
-            echo -e "  ${GREEN}✓${NC} Chunking complete"
+            if [ $CHUNK_ERRORS -gt 0 ]; then
+                echo -e "  ${YELLOW}!${NC} Chunking completed with $CHUNK_ERRORS errors"
+            else
+                echo -e "  ${GREEN}✓${NC} Chunking complete"
+            fi
         else
             echo -e "  ${GREEN}✓${NC} No files need chunking (all < 400 lines)"
         fi

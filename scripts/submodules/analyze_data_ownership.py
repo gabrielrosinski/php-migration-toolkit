@@ -192,6 +192,7 @@ def scan_directory_for_queries(
 ) -> List[TableAccess]:
     """Scan PHP files in directory for database queries."""
     accesses = []
+    skipped_files = []
 
     if not directory.exists():
         return accesses
@@ -209,8 +210,16 @@ def scan_directory_for_queries(
                 str(php_file.relative_to(directory))
             )
             accesses.extend(file_accesses)
-        except Exception:
+        except (OSError, IOError) as e:
+            skipped_files.append((str(php_file), str(e)))
             continue
+
+    if skipped_files:
+        print(f"Warning: Skipped {len(skipped_files)} files due to read errors:", file=sys.stderr)
+        for filepath, error in skipped_files[:5]:  # Show first 5
+            print(f"  - {filepath}: {error}", file=sys.stderr)
+        if len(skipped_files) > 5:
+            print(f"  ... and {len(skipped_files) - 5} more", file=sys.stderr)
 
     return accesses
 

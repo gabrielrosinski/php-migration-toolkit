@@ -7,6 +7,7 @@
 #   ./scripts/create_nx_workspace.sh -o ./output  # Uses source project name
 
 set -e
+set -o pipefail  # Ensure pipeline failures are caught
 
 # Colors
 RED='\033[0;31m'
@@ -1268,7 +1269,10 @@ ENTITIES_DEST="$TARGET_DIR/libs/database/src/entities"
 
 if [ -d "$ENTITIES_SRC" ] && [ "$(ls -A "$ENTITIES_SRC" 2>/dev/null)" ]; then
     mkdir -p "$ENTITIES_DEST"
-    cp -r "$ENTITIES_SRC"/* "$ENTITIES_DEST/" 2>/dev/null || true
+    if ! cp -r "$ENTITIES_SRC"/* "$ENTITIES_DEST/" 2>&1; then
+        echo -e "  ${RED}✗${NC} Failed to copy entities from $ENTITIES_SRC to $ENTITIES_DEST"
+        exit 1
+    fi
     ENTITY_COUNT=$(ls -1 "$ENTITIES_DEST"/*.entity.ts 2>/dev/null | wc -l | tr -d ' ')
     echo -e "  ${GREEN}✓${NC} Copied $ENTITY_COUNT TypeORM entities to libs/database/src/entities/"
 
@@ -1386,9 +1390,17 @@ echo -e "  ${GREEN}✓${NC} Created .env.example"
 # Create .env from .env.example (ready to use for development)
 cp "$TARGET_DIR/.env.example" "$TARGET_DIR/.env"
 # Generate a random JWT secret for development
-JWT_SECRET=$(openssl rand -hex 32 2>/dev/null || python3 -c "import secrets; print(secrets.token_hex(32))")
-sed -i.bak "s/your-secret-key-change-in-production/$JWT_SECRET/" "$TARGET_DIR/.env" 2>/dev/null || \
-sed -i '' "s/your-secret-key-change-in-production/$JWT_SECRET/" "$TARGET_DIR/.env" 2>/dev/null || true
+JWT_SECRET=$(openssl rand -hex 32 2>/dev/null || python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null)
+if [ -z "$JWT_SECRET" ]; then
+    echo -e "  ${RED}✗${NC} Failed to generate JWT secret (neither openssl nor python3 available)"
+    exit 1
+fi
+# Try GNU sed first, then BSD sed (macOS)
+if ! sed -i.bak "s/your-secret-key-change-in-production/$JWT_SECRET/" "$TARGET_DIR/.env" 2>/dev/null; then
+    if ! sed -i '' "s/your-secret-key-change-in-production/$JWT_SECRET/" "$TARGET_DIR/.env" 2>/dev/null; then
+        echo -e "  ${YELLOW}!${NC} Warning: Could not update JWT_SECRET in .env - please set manually"
+    fi
+fi
 rm -f "$TARGET_DIR/.env.bak" 2>/dev/null || true
 echo -e "  ${GREEN}✓${NC} Created .env with generated JWT secret"
 
@@ -1423,22 +1435,24 @@ echo -e "  ${GREEN}✓${NC} Updated database library exports"
 
 # Copy migration analysis reference
 mkdir -p "$TARGET_DIR/docs/migration"
-if [ -f "$OUTPUT_DIR/analysis/architecture_context.json" ]; then
-    cp "$OUTPUT_DIR/analysis/architecture_context.json" "$TARGET_DIR/docs/migration/" 2>/dev/null || true
+DOCS_COPIED=0
+DOCS_FAILED=0
+for doc_file in "architecture_context.json" "legacy_analysis.json" "routes.json" "ARCHITECTURE.md" "NESTJS_BEST_PRACTICES.md"; do
+    if [ -f "$OUTPUT_DIR/analysis/$doc_file" ]; then
+        if cp "$OUTPUT_DIR/analysis/$doc_file" "$TARGET_DIR/docs/migration/" 2>&1; then
+            DOCS_COPIED=$((DOCS_COPIED + 1))
+        else
+            echo -e "  ${YELLOW}!${NC} Warning: Failed to copy $doc_file"
+            DOCS_FAILED=$((DOCS_FAILED + 1))
+        fi
+    fi
+done
+if [ $DOCS_COPIED -gt 0 ]; then
+    echo -e "  ${GREEN}✓${NC} Copied $DOCS_COPIED migration analysis files to docs/migration/"
 fi
-if [ -f "$OUTPUT_DIR/analysis/legacy_analysis.json" ]; then
-    cp "$OUTPUT_DIR/analysis/legacy_analysis.json" "$TARGET_DIR/docs/migration/" 2>/dev/null || true
+if [ $DOCS_FAILED -gt 0 ]; then
+    echo -e "  ${YELLOW}!${NC} Warning: $DOCS_FAILED files failed to copy"
 fi
-if [ -f "$OUTPUT_DIR/analysis/routes.json" ]; then
-    cp "$OUTPUT_DIR/analysis/routes.json" "$TARGET_DIR/docs/migration/" 2>/dev/null || true
-fi
-if [ -f "$OUTPUT_DIR/analysis/ARCHITECTURE.md" ]; then
-    cp "$OUTPUT_DIR/analysis/ARCHITECTURE.md" "$TARGET_DIR/docs/migration/" 2>/dev/null || true
-fi
-if [ -f "$OUTPUT_DIR/analysis/NESTJS_BEST_PRACTICES.md" ]; then
-    cp "$OUTPUT_DIR/analysis/NESTJS_BEST_PRACTICES.md" "$TARGET_DIR/docs/migration/" 2>/dev/null || true
-fi
-echo -e "  ${GREEN}✓${NC} Copied migration analysis to docs/migration/"
 
 # Add .env to .gitignore if not already there
 if ! grep -q "^\.env$" "$TARGET_DIR/.gitignore" 2>/dev/null; then

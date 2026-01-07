@@ -10,6 +10,7 @@
 #     --transport tcp
 
 set -e
+set -o pipefail  # Ensure pipeline failures are caught
 
 # Colors
 RED='\033[0;31m'
