@@ -177,6 +177,13 @@ fi
 
 # === GENERATE CHUNKS ===
 
+# Extract functions from a chunk file
+extract_chunk_functions() {
+    local chunk_file="$1"
+    # Extract function names from chunk
+    grep -oE 'function\s+\w+' "$chunk_file" 2>/dev/null | sed 's/function //' | tr '\n' ',' | sed 's/,$//'
+}
+
 while IFS=: read -r START END NUM; do
     CHUNK_FILE=$(printf "%s/chunk_%03d.php" "$OUTPUT_DIR" "$NUM")
     CHUNK_LINES=$((END - START + 1))
@@ -263,13 +270,20 @@ cat > "$OUTPUT_DIR/manifest.json" << EOF
 $(while IFS=: read -r START END NUM; do
     CFILE=$(printf "chunk_%03d.php" "$NUM")
     CLINES=$((END - START + 1))
-    echo "    {\"file\": \"$CFILE\", \"lines\": $CLINES, \"range\": \"$START-$END\"},"
+    FUNCS=$(extract_chunk_functions "$OUTPUT_DIR/$CFILE")
+    # Format functions as JSON array
+    if [ -n "$FUNCS" ]; then
+        FUNCS_JSON=$(echo "$FUNCS" | sed 's/\([^,]*\)/"\1"/g')
+    else
+        FUNCS_JSON=""
+    fi
+    echo "    {\"file\": \"$CFILE\", \"lines\": $CLINES, \"range\": \"$START-$END\", \"functions\": [$FUNCS_JSON]},"
 done < "$OUTPUT_DIR/_chunk_boundaries.txt" | sed '$ s/,$//')
   ],
   "migration_hints": {
     "entry_point": $(grep -q "\$_GET\|\$_POST\|\$_REQUEST" "$FILE" && echo "true" || echo "false"),
     "has_session": $(grep -q "\$_SESSION" "$FILE" && echo "true" || echo "false"),
-    "has_direct_sql": $(grep -q "mysql_query\|mysqli_query" "$FILE" && echo "true" || echo "false"),
+    "has_direct_sql": $(grep -qE "mysql_query|mysqli_query|->query\(|->prepare\(|->execute\(" "$FILE" && echo "true" || echo "false"),
     "has_html_output": $(grep -q "echo\|print\|<html\|<body" "$FILE" && echo "true" || echo "false")
   }
 }

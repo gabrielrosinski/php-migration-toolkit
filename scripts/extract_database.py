@@ -408,36 +408,75 @@ class PHPQueryAnalyzer:
         """Parse a SQL query to extract table and column information."""
         query = query.strip().strip('"\'')
 
+        # Helper to clean column names (remove aliases, table prefixes)
+        def clean_column(col: str) -> str:
+            col = col.strip().split()[-1].strip('`"[]')
+            if '.' in col:
+                col = col.split('.')[-1]  # Remove table alias (p.column -> column)
+            return col
+
+        # Track current table for WHERE clause extraction
+        current_table = None
+
         # SELECT queries
         select_match = re.search(r'SELECT\s+(.*?)\s+FROM\s+[`"\[]?(\w+)[`"\]]?', query, re.IGNORECASE | re.DOTALL)
         if select_match:
             columns_part = select_match.group(1)
-            table_name = select_match.group(2)
+            current_table = select_match.group(2)
+
+            if current_table not in tables_info:
+                tables_info[current_table] = {'columns': set(), 'types': {}}
 
             if columns_part.strip() != '*':
                 for col in columns_part.split(','):
-                    col = col.strip().split()[-1].strip('`"[]')  # Handle aliases
-                    if col and col != '*':
-                        tables_info[table_name]['columns'].add(col)
+                    col = clean_column(col)
+                    if col and col != '*' and not col.startswith('$'):
+                        tables_info[current_table]['columns'].add(col)
 
         # INSERT queries
         insert_match = re.search(r'INSERT\s+INTO\s+[`"\[]?(\w+)[`"\]]?\s*\(([^)]+)\)', query, re.IGNORECASE)
         if insert_match:
-            table_name = insert_match.group(1)
-            columns = [c.strip().strip('`"[]') for c in insert_match.group(2).split(',')]
+            current_table = insert_match.group(1)
+            if current_table not in tables_info:
+                tables_info[current_table] = {'columns': set(), 'types': {}}
+            columns = [clean_column(c) for c in insert_match.group(2).split(',')]
             for col in columns:
-                if col:
-                    tables_info[table_name]['columns'].add(col)
+                if col and not col.startswith('$'):
+                    tables_info[current_table]['columns'].add(col)
 
         # UPDATE queries
         update_match = re.search(r'UPDATE\s+[`"\[]?(\w+)[`"\]]?\s+SET\s+(.*?)(?:\s+WHERE|$)', query, re.IGNORECASE | re.DOTALL)
         if update_match:
-            table_name = update_match.group(1)
+            current_table = update_match.group(1)
+            if current_table not in tables_info:
+                tables_info[current_table] = {'columns': set(), 'types': {}}
             set_part = update_match.group(2)
             for assignment in set_part.split(','):
                 col_match = re.match(r'\s*[`"\[]?(\w+)[`"\]]?\s*=', assignment)
                 if col_match:
-                    tables_info[table_name]['columns'].add(col_match.group(1))
+                    col = clean_column(col_match.group(1))
+                    if not col.startswith('$'):
+                        tables_info[current_table]['columns'].add(col)
+
+        # DELETE queries (NEW)
+        delete_match = re.search(r'DELETE\s+FROM\s+[`"\[]?(\w+)[`"\]]?', query, re.IGNORECASE)
+        if delete_match:
+            current_table = delete_match.group(1)
+            if current_table not in tables_info:
+                tables_info[current_table] = {'columns': set(), 'types': {}}
+
+        # WHERE clause extraction (NEW) - applies to SELECT, UPDATE, DELETE
+        if current_table:
+            where_match = re.search(r'WHERE\s+(.+?)(?:ORDER|GROUP|LIMIT|;|$)', query, re.IGNORECASE | re.DOTALL)
+            if where_match:
+                where_clause = where_match.group(1)
+                # Extract columns from conditions: column = value, column > value, column IN (...), column IS NULL
+                where_cols = re.findall(r'[`"\[]?(\w+)[`"\]]?\s*(?:=|!=|<>|>|<|>=|<=|IN|LIKE|IS|BETWEEN)', where_clause, re.IGNORECASE)
+                sql_keywords = {'and', 'or', 'not', 'null', 'in', 'like', 'is', 'between', 'true', 'false'}
+                for col in where_cols:
+                    col = clean_column(col)
+                    if col.lower() not in sql_keywords and not col.startswith('$'):
+                        tables_info[current_table]['columns'].add(col)
 
 
 class TypeORMEntityGenerator:

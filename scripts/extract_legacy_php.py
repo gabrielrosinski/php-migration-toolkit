@@ -77,6 +77,10 @@ class FunctionInfo:
     cyclomatic_complexity: int = 1
     is_static: bool = False
     phpdoc_types: Dict[str, str] = field(default_factory=dict)
+    # Return structure fields for DTO generation
+    return_type: Optional[str] = None                              # 'array', 'scalar', 'void'
+    return_array_keys: List[str] = field(default_factory=list)     # Top-level keys ['id', 'name']
+    return_nested_keys: Dict[str, List[str]] = field(default_factory=dict)  # {'data': ['id', 'price']}
 
 
 @dataclass
@@ -501,6 +505,9 @@ class LegacyPHPExtractor:
             uses_superglobals = [sg for sg in self.SUPERGLOBALS if sg in func_body]
             calls_functions = re.findall(r'\b(\w+)\s*\(', func_body)
 
+            # Extract return structure for DTO generation
+            return_info = self._extract_return_structures(func_body)
+
             # Calculate cyclomatic complexity
             complexity = self._calculate_complexity(func_body)
 
@@ -524,11 +531,68 @@ class LegacyPHPExtractor:
                 cyclomatic_complexity=complexity,
                 is_static=is_static,
                 phpdoc_types=phpdoc_types,
+                # Return structure fields for DTO generation
+                return_type=return_info['type'],
+                return_array_keys=return_info['keys'],
+                return_nested_keys=return_info['nested'],
             ))
 
             self.all_functions[func_name] = str(content[:100])
 
         return functions
+
+    def _extract_return_structures(self, func_body: str) -> Dict:
+        """Extract return array structure from function body.
+
+        Detects patterns like:
+        - return ['key' => value, ...]
+        - $arr['key'] = value; return $arr;
+        - $arr['data']['field'] = value;
+        """
+        result = {
+            'type': None,
+            'keys': set(),
+            'nested': {}
+        }
+
+        # Find return variable name
+        return_var_match = re.search(r"return\s+\$(\w+)\s*;", func_body)
+        return_var = return_var_match.group(1) if return_var_match else None
+
+        # Pattern 1: Direct array literal returns
+        # return ['id' => $id, 'name' => $name]
+        direct_keys = re.findall(r"return\s*\[[^\]]*['\"](\w+)['\"]\s*=>", func_body)
+        result['keys'].update(direct_keys)
+
+        if return_var:
+            # Pattern 2: Variable array building - $arr['key'] = value
+            var_pattern = rf"\${return_var}\s*\[\s*['\"](\w+)['\"]\s*\]\s*="
+            arr_keys = re.findall(var_pattern, func_body)
+            result['keys'].update(arr_keys)
+
+            # Pattern 3: Nested arrays - $arr['data']['field'] = value
+            nested_pattern = rf"\${return_var}\s*\[\s*['\"](\w+)['\"]\s*\]\s*\[\s*['\"](\w+)['\"]\s*\]\s*="
+            nested_matches = re.findall(nested_pattern, func_body)
+            for parent_key, child_key in nested_matches:
+                if parent_key not in result['nested']:
+                    result['nested'][parent_key] = set()
+                result['nested'][parent_key].add(child_key)
+
+        # Determine return type
+        if result['keys'] or result['nested']:
+            result['type'] = 'array'
+        elif 'return true' in func_body.lower() or 'return false' in func_body.lower():
+            result['type'] = 'bool'
+        elif re.search(r'return\s+\$\w+\s*;', func_body):
+            result['type'] = 'mixed'
+        elif 'return' not in func_body:
+            result['type'] = 'void'
+
+        # Convert sets to lists for JSON serialization
+        result['keys'] = sorted(list(result['keys']))
+        result['nested'] = {k: sorted(list(v)) for k, v in result['nested'].items()}
+
+        return result
 
     def _calculate_complexity(self, code: str) -> int:
         """Calculate cyclomatic complexity of code block."""
@@ -688,10 +752,10 @@ class LegacyPHPExtractor:
         sql_pattern = r'["\'](?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)[^"\']{10,}["\']'
 
         for match in re.finditer(sql_pattern, content, re.IGNORECASE):
-            query = match.group(0)[:200]
+            query = match.group(0)[:500]  # Increased from 200 for better WHERE clause capture
             queries.append(query)
 
-        return queries[:20]  # Limit
+        return queries[:100]  # Increased from 20 for comprehensive analysis
 
     def _extract_output_points(self, content: str, lines: List[str]) -> List[Dict]:
         """Extract where the file outputs content."""

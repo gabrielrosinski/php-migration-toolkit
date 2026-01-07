@@ -76,6 +76,67 @@ def detect_code_patterns(content: str) -> Tuple[bool, bool]:
     return has_sql, has_html
 
 
+def get_function_context(func_name: str, analysis_data: Optional[Dict]) -> Optional[Dict]:
+    """Lookup function details from legacy_analysis.json.
+
+    Returns function context including return type and return keys for DTO generation.
+    """
+    if not analysis_data:
+        return None
+
+    # Search in all_files for function definitions
+    for file_data in analysis_data.get('all_files', []):
+        for func in file_data.get('functions', []):
+            if func.get('name') == func_name:
+                return {
+                    'name': func['name'],
+                    'params': func.get('params', []),
+                    'return_type': func.get('return_type'),
+                    'return_array_keys': func.get('return_array_keys', []),
+                    'return_nested_keys': func.get('return_nested_keys', {}),
+                    'calls_db': func.get('calls_db', False),
+                    'cyclomatic_complexity': func.get('cyclomatic_complexity', 1),
+                    'source_file': file_data.get('path', 'unknown')
+                }
+    return None
+
+
+def build_function_context_section(functions: List[str], analysis_data: Optional[Dict]) -> List[str]:
+    """Build the Function Context section for a job markdown."""
+    lines = []
+
+    if not functions or not analysis_data:
+        return lines
+
+    lines.append("## Function Context")
+    lines.append("")
+    lines.append("Return type and field information for DTO generation:")
+    lines.append("")
+
+    found_context = False
+    for func_name in functions:
+        ctx = get_function_context(func_name, analysis_data)
+        if ctx:
+            found_context = True
+            params_str = ', '.join(ctx['params']) if ctx['params'] else ''
+            lines.append(f"### {ctx['name']}({params_str})")
+            lines.append(f"- **Returns**: {ctx['return_type'] or 'unknown'}")
+            if ctx['return_array_keys']:
+                lines.append(f"- **Return keys**: {', '.join(ctx['return_array_keys'])}")
+            if ctx['return_nested_keys']:
+                for parent, children in ctx['return_nested_keys'].items():
+                    lines.append(f"- **{parent}**: {', '.join(children)}")
+            lines.append(f"- **Database**: {'Yes' if ctx['calls_db'] else 'No'}")
+            lines.append(f"- **Complexity**: {ctx['cyclomatic_complexity']}")
+            lines.append("")
+
+    if not found_context:
+        lines.append("_No function context available from analysis._")
+        lines.append("")
+
+    return lines
+
+
 def find_logical_break_point(lines: List[str], target_line: int, search_range: int = 30) -> int:
     """
     Find a logical break point near the target line.
@@ -185,7 +246,8 @@ def generate_job_markdown(
     total_jobs: int,
     prev_job: Optional[JobSegment],
     next_job: Optional[JobSegment],
-    architecture_context: Optional[Dict] = None
+    architecture_context: Optional[Dict] = None,
+    analysis_data: Optional[Dict] = None
 ) -> str:
     """Generate a self-contained markdown job file."""
 
@@ -260,6 +322,13 @@ def generate_job_markdown(
     if job.has_html:
         lines.append("**HTML Output**: Yes - contains HTML generation")
     lines.append("")
+
+    # Function context (from legacy_analysis.json)
+    function_context_lines = build_function_context_section(
+        job.functions_in_segment,
+        analysis_data
+    )
+    lines.extend(function_context_lines)
 
     # Continuity context
     lines.append("## Continuity Context")
@@ -413,7 +482,8 @@ def process_chunked_file(
     chunks_dir: Path,
     source_root: str,
     output_dir: Path,
-    architecture_context: Optional[Dict] = None
+    architecture_context: Optional[Dict] = None,
+    analysis_data: Optional[Dict] = None
 ) -> Optional[ChunkedFileInfo]:
     """Process a single chunked file directory and generate jobs."""
 
@@ -459,7 +529,8 @@ def process_chunked_file(
             total_jobs=len(jobs),
             prev_job=prev_job,
             next_job=next_job,
-            architecture_context=architecture_context
+            architecture_context=architecture_context,
+            analysis_data=analysis_data
         )
 
         job_file = file_output_dir / f"job_{job.job_number:03d}.md"
@@ -609,6 +680,10 @@ def main():
         '-a', '--architecture-context',
         help='Optional architecture_context.json for additional context'
     )
+    parser.add_argument(
+        '--analysis',
+        help='Path to legacy_analysis.json for function context (return types, etc.)'
+    )
 
     args = parser.parse_args()
 
@@ -627,6 +702,16 @@ def main():
                 arch_context = json.load(f)
         except (json.JSONDecodeError, IOError) as e:
             print(f"Warning: Could not load architecture context: {e}", file=sys.stderr)
+
+    # Load legacy analysis data if provided (for function context)
+    analysis_data = None
+    if args.analysis and os.path.exists(args.analysis):
+        try:
+            with open(args.analysis, 'r', encoding='utf-8') as f:
+                analysis_data = json.load(f)
+            print(f"Loaded analysis data from: {args.analysis}")
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Warning: Could not load analysis data: {e}", file=sys.stderr)
 
     # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -658,7 +743,8 @@ def main():
             chunks_dir=chunk_dir,
             source_root=args.source_root,
             output_dir=output_dir,
-            architecture_context=arch_context
+            architecture_context=arch_context,
+            analysis_data=analysis_data
         )
         if result:
             chunked_files.append(result)
