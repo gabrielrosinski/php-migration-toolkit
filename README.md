@@ -741,6 +741,17 @@ The prompts automatically query these via Context7 MCP when needed:
 - **PHP 5 Manual** - Legacy function behavior
 - **MICROSERVICES_PATTERNS.md** - Architecture patterns (local)
 
+## Reset / Start Fresh
+
+To completely reset and start the migration from scratch:
+
+```bash
+# Delete all outputs: analysis, jobs, migrated code, and Nx workspace
+rm -rf ./output ./migrated ../m-action-nestjs
+```
+
+Then re-run: `./scripts/master_migration.sh /path/to/php-project -o ./output`
+
 ## Troubleshooting
 
 See [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for common issues and solutions.
