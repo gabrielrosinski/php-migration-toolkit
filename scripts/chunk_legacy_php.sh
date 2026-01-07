@@ -45,40 +45,40 @@ echo "▶ Analyzing file structure..."
 # Find all structural boundaries
 {
     # Function definitions
-    grep -n "^[[:space:]]*function " "$FILE" | cut -d: -f1 | while read line; do
+    (grep -n "^[[:space:]]*function " "$FILE" || true) | cut -d: -f1 | while read line; do
         echo "$line:FUNCTION"
     done
-    
+
     # Class definitions
-    grep -n "^[[:space:]]*class " "$FILE" | cut -d: -f1 | while read line; do
+    (grep -n "^[[:space:]]*class " "$FILE" || true) | cut -d: -f1 | while read line; do
         echo "$line:CLASS"
     done
-    
+
     # PHP open tags (potential entry points)
-    grep -n "<?php" "$FILE" | cut -d: -f1 | while read line; do
+    (grep -n "<?php" "$FILE" || true) | cut -d: -f1 | while read line; do
         echo "$line:PHP_OPEN"
     done
-    
+
     # PHP close tags (end of PHP blocks)
-    grep -n "?>" "$FILE" | cut -d: -f1 | while read line; do
+    (grep -n "?>" "$FILE" || true) | cut -d: -f1 | while read line; do
         echo "$line:PHP_CLOSE"
     done
-    
+
     # HTML structure tags
-    grep -n "<html\|<body\|</body\|</html\|<head\|</head" "$FILE" | cut -d: -f1 | while read line; do
+    (grep -n "<html\|<body\|</body\|</html\|<head\|</head" "$FILE" || true) | cut -d: -f1 | while read line; do
         echo "$line:HTML_STRUCTURE"
     done
-    
+
     # Include/require statements
-    grep -n "include\|require" "$FILE" | cut -d: -f1 | while read line; do
+    (grep -n "include\|require" "$FILE" || true) | cut -d: -f1 | while read line; do
         echo "$line:INCLUDE"
     done
-    
+
     # Major control structures
-    grep -n "^[[:space:]]*if[[:space:]]*(\|^[[:space:]]*switch[[:space:]]*(\|^[[:space:]]*foreach[[:space:]]*(\|^[[:space:]]*while[[:space:]]*(" "$FILE" | cut -d: -f1 | while read line; do
+    (grep -n "^[[:space:]]*if[[:space:]]*(\|^[[:space:]]*switch[[:space:]]*(\|^[[:space:]]*foreach[[:space:]]*(\|^[[:space:]]*while[[:space:]]*(" "$FILE" || true) | cut -d: -f1 | while read line; do
         echo "$line:CONTROL"
     done
-    
+
 } | sort -t: -k1 -n > "$OUTPUT_DIR/_boundaries.txt"
 
 BOUNDARY_COUNT=$(wc -l < "$OUTPUT_DIR/_boundaries.txt")
@@ -131,47 +131,47 @@ echo "▶ Creating chunks..."
 # Determine chunk boundaries
 CHUNK_NUM=1
 CHUNK_START=1
-CURRENT_LINES=0
 
 # Create temporary file for chunk boundaries
 > "$OUTPUT_DIR/_chunk_boundaries.txt"
 
 while IFS=: read -r LINE_NUM BOUNDARY_TYPE; do
-    # Skip if this line is before our current position
+    # Skip if this line is before or at our current chunk start
     [ "$LINE_NUM" -le "$CHUNK_START" ] && continue
-    
-    LINES_TO_ADD=$((LINE_NUM - CHUNK_START))
-    
-    # Check if we should start a new chunk
+
+    # Calculate lines in current chunk if we include up to this boundary
+    CHUNK_SIZE=$((LINE_NUM - CHUNK_START))
+
+    # Check if we should start a new chunk HERE (at LINE_NUM)
     START_NEW_CHUNK=false
-    
-    # Always start new chunk at certain boundaries if we have enough content
-    if [ "$CURRENT_LINES" -gt 50 ]; then
+
+    # Start new chunk at FUNCTION/CLASS boundaries if chunk has 50+ lines
+    if [ "$CHUNK_SIZE" -gt 50 ]; then
         case "$BOUNDARY_TYPE" in
-            FUNCTION|CLASS|HTML_STRUCTURE)
+            FUNCTION|CLASS)
                 START_NEW_CHUNK=true
                 ;;
         esac
     fi
-    
-    # Start new chunk if we'd exceed max lines
-    if [ $((CURRENT_LINES + LINES_TO_ADD)) -gt "$MAX_LINES" ] && [ "$CURRENT_LINES" -gt 0 ]; then
+
+    # Start new chunk if current chunk would exceed max lines
+    if [ "$CHUNK_SIZE" -gt "$MAX_LINES" ]; then
         START_NEW_CHUNK=true
     fi
-    
+
     if [ "$START_NEW_CHUNK" = true ]; then
-        echo "$CHUNK_START:$((CHUNK_START + CURRENT_LINES - 1)):$CHUNK_NUM" >> "$OUTPUT_DIR/_chunk_boundaries.txt"
+        # End current chunk at line BEFORE this boundary
+        CHUNK_END=$((LINE_NUM - 1))
+        echo "$CHUNK_START:$CHUNK_END:$CHUNK_NUM" >> "$OUTPUT_DIR/_chunk_boundaries.txt"
         CHUNK_NUM=$((CHUNK_NUM + 1))
+        # Start new chunk at this boundary
         CHUNK_START=$LINE_NUM
-        CURRENT_LINES=$LINES_TO_ADD
-    else
-        CURRENT_LINES=$((CURRENT_LINES + LINES_TO_ADD))
     fi
-    
+
 done < "$OUTPUT_DIR/_boundaries.txt"
 
-# Don't forget the last chunk
-if [ "$CURRENT_LINES" -gt 0 ] || [ "$CHUNK_START" -le "$TOTAL_LINES" ]; then
+# Don't forget the last chunk (from CHUNK_START to end of file)
+if [ "$CHUNK_START" -le "$TOTAL_LINES" ]; then
     echo "$CHUNK_START:$TOTAL_LINES:$CHUNK_NUM" >> "$OUTPUT_DIR/_chunk_boundaries.txt"
 fi
 
