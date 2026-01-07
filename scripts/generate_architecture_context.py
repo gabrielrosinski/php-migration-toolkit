@@ -423,6 +423,81 @@ def extract_dependency_graph(analysis: Dict) -> Dict:
     }
 
 
+def load_chunked_files_summary(chunks_dir: str) -> Dict:
+    """Load summary of all chunked PHP files from manifest files.
+
+    Args:
+        chunks_dir: Path to chunks directory (e.g., output/analysis/chunks)
+
+    Returns:
+        Dictionary with chunked files info for architecture context
+    """
+    result = {
+        "chunked_files": [],
+        "total_files": 0,
+        "total_chunks": 0,
+        "total_lines": 0,
+        "total_jobs_needed": 0
+    }
+
+    if not chunks_dir or not os.path.isdir(chunks_dir):
+        return result
+
+    # Find all manifest.json files in subdirectories
+    for subdir in os.listdir(chunks_dir):
+        manifest_path = os.path.join(chunks_dir, subdir, 'manifest.json')
+        if not os.path.isfile(manifest_path):
+            continue
+
+        try:
+            with open(manifest_path, 'r', encoding='utf-8') as f:
+                manifest = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Warning: Could not read chunk manifest {manifest_path}: {e}", file=sys.stderr)
+            continue
+
+        # Extract relevant info for architecture context
+        source_file = manifest.get('source_file', '')
+        total_lines = manifest.get('total_lines', 0)
+        chunk_count = manifest.get('chunk_count', 0)
+        analysis = manifest.get('analysis', {})
+        hints = manifest.get('migration_hints', {})
+
+        # Calculate approximate job count (400 lines per job)
+        estimated_jobs = max(1, (total_lines + 399) // 400)
+
+        file_info = {
+            "file": os.path.basename(source_file),
+            "path": source_file,
+            "total_lines": total_lines,
+            "chunk_count": chunk_count,
+            "estimated_jobs": estimated_jobs,
+            "includes": analysis.get('includes', []),
+            "globals": analysis.get('globals', []),
+            "superglobals": analysis.get('superglobals', []),
+            "has_database_operations": analysis.get('has_database_operations', False),
+            "is_mixed_html_php": analysis.get('is_mixed_html_php', False),
+            "migration_hints": {
+                "is_entry_point": hints.get('entry_point', False),
+                "has_session": hints.get('has_session', False),
+                "has_direct_sql": hints.get('has_direct_sql', False),
+                "has_html_output": hints.get('has_html_output', False)
+            }
+        }
+
+        result["chunked_files"].append(file_info)
+        result["total_chunks"] += chunk_count
+        result["total_lines"] += total_lines
+        result["total_jobs_needed"] += estimated_jobs
+
+    result["total_files"] = len(result["chunked_files"])
+
+    # Sort by total lines (largest first)
+    result["chunked_files"].sort(key=lambda x: x["total_lines"], reverse=True)
+
+    return result
+
+
 def load_database_schema(db_dir: str) -> Dict:
     """Load complete database schema with tables and columns.
 
@@ -531,12 +606,18 @@ def generate_architecture_context(
     analysis_path: str,
     routes_path: Optional[str] = None,
     database_dir: Optional[str] = None,
+    chunks_dir: Optional[str] = None,
     output_path: Optional[str] = None,
     compact: bool = True
 ) -> Dict:
     """Generate architecture context for LLM consumption.
 
     Args:
+        analysis_path: Path to legacy_analysis.json
+        routes_path: Path to routes.json (optional)
+        database_dir: Path to database directory (optional)
+        chunks_dir: Path to chunks directory for large file info (optional)
+        output_path: Path to write output (optional)
         compact: If True, use ultra-compact string format (for single file ~70KB).
                  If False, use full JSON format (for split files ~100KB total).
     """
@@ -628,6 +709,25 @@ def generate_architecture_context(
         if db_schema.get("table_count", 0) > 0:
             context["database_schema"] = db_schema
 
+    # Load chunked files summary (large files that need separate migration jobs)
+    chunks_path = chunks_dir
+    if not chunks_path and output_path:
+        # Infer chunks directory from output path
+        output_dir = os.path.dirname(output_path)
+        chunks_path = os.path.join(output_dir, 'chunks')
+
+    if chunks_path and os.path.isdir(chunks_path):
+        chunks_summary = load_chunked_files_summary(chunks_path)
+        if chunks_summary.get("total_files", 0) > 0:
+            context["large_files"] = {
+                "description": "Files too large for single context - require separate migration jobs",
+                "total_files": chunks_summary["total_files"],
+                "total_lines": chunks_summary["total_lines"],
+                "total_jobs_needed": chunks_summary["total_jobs_needed"],
+                "files": chunks_summary["chunked_files"],
+                "jobs_directory": "output/jobs/migration/"
+            }
+
     # Add timestamp
     from datetime import datetime
     context["_meta"]["generated_at"] = datetime.now().isoformat()
@@ -674,6 +774,10 @@ def main():
         help='Output path for context file'
     )
     parser.add_argument(
+        '--chunks', '-c',
+        help='Path to chunks directory (e.g., output/analysis/chunks)'
+    )
+    parser.add_argument(
         '--split', '-s',
         action='store_true',
         help='Split into multiple files for larger context window usage'
@@ -691,6 +795,7 @@ def main():
             args.analysis,
             args.routes,
             args.database,
+            args.chunks,
             None,  # Don't write single file
             compact=False  # Use full JSON format
         )
@@ -699,7 +804,7 @@ def main():
         output_dir = os.path.dirname(args.output)
         os.makedirs(output_dir, exist_ok=True)
 
-        # File 1: Core context (entry points, project, services, config, globals)
+        # File 1: Core context (entry points, project, services, config, globals, large_files)
         core_context = {
             "_meta": context.get("_meta", {}),
             "project": context.get("project", {}),
@@ -708,6 +813,7 @@ def main():
             "config": context.get("config", {}),
             "globals": context.get("globals", {}),
             "dependencies": context.get("dependencies", {}),
+            "large_files": context.get("large_files", {}),
         }
         core_path = os.path.join(output_dir, "architecture_context.json")
         with open(core_path, 'w', encoding='utf-8') as f:
@@ -762,6 +868,7 @@ def main():
             args.analysis,
             args.routes,
             args.database,
+            args.chunks,
             args.output,
             compact=True
         )

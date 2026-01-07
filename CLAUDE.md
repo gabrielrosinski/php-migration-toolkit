@@ -58,6 +58,12 @@ python scripts/generate_architecture_context.py \
 # Chunk large PHP files for context limits
 ./scripts/chunk_legacy_php.sh huge_file.php ./chunks 400
 
+# Generate migration jobs for large files (auto-runs during master_migration.sh)
+python scripts/generate_chunk_jobs.py \
+  -c output/analysis/chunks \
+  -s /path/to/php-project \
+  -o output/jobs/migration
+
 # Generate condensed schema summary (87% smaller than full schema)
 python scripts/generate_schema_summary.py output/database/schema_inferred.json \
   -o output/database/schema_summary.json \
@@ -93,6 +99,67 @@ rm -f .claude/ralph-loop.local.md
 - Module-specific: `prompts/migration/<module>.md`
 
 See `migration-steps.md` for detailed per-module commands.
+
+### Large File Migration Jobs (Context Window Management)
+
+Files over 400 lines are automatically chunked and converted into **self-contained migration jobs**. Each job is designed to fit within Claude's context window and runs in its own session.
+
+**Why this matters:**
+- A 3,670-line PHP file (~120KB) exceeds practical context limits
+- Each job covers ~400 lines (~20KB) + context + response fits comfortably
+- Jobs run in **separate sessions** to avoid context overflow
+
+**Auto-generated during Phase 1:**
+```
+output/jobs/migration/
+├── _index.md                    # Master index of all jobs
+├── chunked_files_summary.json   # Machine-readable summary
+├── item/                        # Jobs for item.php (3,670 lines → 9 jobs)
+│   ├── _overview.md             # Execution order and context
+│   ├── job_001.md               # Lines 1-406
+│   ├── job_002.md               # Lines 407-824
+│   └── ...
+├── setup/                       # Jobs for setup.php (1,079 lines → 3 jobs)
+└── bms/                         # Jobs for bms.php (796 lines → 3 jobs)
+```
+
+**Run jobs automatically (each in its own Claude session):**
+```bash
+# Run ALL migration jobs
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated
+
+# Run jobs for specific file only
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/item -o ./migrated
+
+# Run single job
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/item/job_001.md -o ./migrated
+
+# Resume from job 5 (skip 1-4)
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration --continue-from 5
+
+# Dry run - preview without executing
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration --dry-run
+```
+
+**Manual execution (alternative):**
+```bash
+# View job index
+cat output/jobs/migration/_index.md
+
+# Run job in fresh Claude session
+cat output/jobs/migration/item/job_001.md | claude --print -p -
+
+# Or copy to clipboard and paste into Claude web UI
+cat output/jobs/migration/item/job_001.md | pbcopy
+```
+
+**Each job file contains:**
+- File context (source, line range, position in sequence)
+- Dependencies (includes, globals, superglobals)
+- Migration hints (entry point, has session, has SQL, has HTML)
+- Continuity context (what previous/next jobs cover)
+- The actual PHP code to migrate
+- Migration instructions
 
 ### Submodule Extraction (Automatic)
 
@@ -199,7 +266,9 @@ migration-toolkit/
 │   ├── extract_routes.py       # Multi-source route extraction
 │   ├── extract_database.py     # SQL → TypeORM entity generation
 │   ├── generate_architecture_context.py  # Comprehensive LLM-optimized context
-│   ├── chunk_legacy_php.sh     # Large file splitting
+│   ├── chunk_legacy_php.sh     # Large file splitting at logical boundaries
+│   ├── generate_chunk_jobs.py  # Creates migration jobs from chunks
+│   ├── run_migration_jobs.sh   # Runs jobs in separate Claude sessions
 │   └── submodules/             # Submodule extraction scripts
 │       ├── extract_submodules.sh       # Main orchestration
 │       ├── validate_submodule.py       # Submodule validation
@@ -256,7 +325,7 @@ This single command runs **8 automated phases**:
 | Phase | Description |
 |-------|-------------|
 | 0 | Environment check + auto-discovery (configs, submodules) |
-| 1 | PHP code analysis with security scanning |
+| 1 | PHP code analysis + security scanning + **large file chunking + job generation** |
 | 2 | Route extraction from .htaccess/nginx/PHP |
 | 3 | Database schema → TypeORM entities |
 | **4** | **Submodule extraction → NestJS microservices** (automatic if submodules exist) |
@@ -264,6 +333,11 @@ This single command runs **8 automated phases**:
 | 6 | System design guidance |
 | 7 | Service generation guidance |
 | 8 | Testing guidance |
+
+**Phase 1 outputs for large files (>400 lines):**
+- `output/analysis/chunks/{file}/` - Logical chunks with manifests
+- `output/jobs/migration/{file}/` - Self-contained migration jobs
+- `output/analysis/architecture_context.json` - Includes `large_files` section
 
 ### Step 2: Architecture Design (Research + Design in One Step)
 ```bash
@@ -298,14 +372,27 @@ This automatically:
 - Installs required dependencies
 
 ### Step 4: Migrate Services
-**Main gateway:**
+
+**Option A: Large files (>400 lines) - Use Job Runner:**
+```bash
+# Run all migration jobs (each in its own Claude session)
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated
+
+# Or run jobs for specific file
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/item -o ./migrated
+
+# Review outputs and combine into final NestJS modules
+ls ./migrated/item/
+```
+
+**Option B: Regular files - Use Ralph Wiggum Loop:**
 ```bash
 # 1. Read prompt: prompts/legacy_php_migration.md
 # 2. Run with Bash tool:
 "/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "YOUR PROMPT TEXT" --completion-promise "SERVICE_COMPLETE" --max-iterations 60
 ```
 
-**Extracted microservices:**
+**Option C: Extracted microservices:**
 ```bash
 # 1. Read prompt: prompts/extract_service.md (reads context from output/services/{service}/analysis/service_context.json)
 # 2. Run with Bash tool:

@@ -48,7 +48,9 @@ migration-toolkit/
 │   ├── extract_routes.py                # Parses htaccess/nginx/PHP routes
 │   ├── extract_database.py              # Generates TypeORM entities from SQL
 │   ├── generate_architecture_context.py # Creates comprehensive LLM-optimized context
-│   ├── chunk_legacy_php.sh              # Splits large files
+│   ├── chunk_legacy_php.sh              # Splits large files at logical boundaries
+│   ├── generate_chunk_jobs.py           # Creates migration jobs from chunks
+│   ├── run_migration_jobs.sh            # Runs jobs in separate Claude sessions
 │   └── submodules/                      # Submodule extraction (automatic)
 │       ├── detect_call_points.py        # Find usage in main project
 │       ├── analyze_call_contract.py     # Input/output preservation
@@ -81,6 +83,7 @@ migration-toolkit/
 - **Complexity Metrics**: Cyclomatic complexity calculation per function
 - **Configuration Extraction**: Detects hardcoded configs for externalization
 - **External API Detection**: Identifies CURL/HTTP calls to external services
+- **Large File Handling**: Files >400 lines are chunked and converted to migration jobs
 
 ### Route Extraction
 - **.htaccess Parsing**: Apache mod_rewrite rules
@@ -202,10 +205,20 @@ output/
 │   ├── legacy_analysis.json          # Code + security analysis
 │   ├── routes.json                   # All routes
 │   ├── architecture_context.json     # LLM-optimized context
+│   ├── chunks/                       # Chunked large files
+│   │   └── {filename}/
+│   │       ├── manifest.json         # Chunk metadata
+│   │       └── chunk_*.php           # Individual chunks
 │   └── extracted_services.json       # Submodule manifest (if any)
 ├── database/
 │   ├── schema.json                   # Database schema
 │   └── entities/                     # TypeORM entities
+├── jobs/                             # Migration jobs for large files
+│   └── migration/
+│       ├── _index.md                 # Index of all jobs
+│       └── {filename}/
+│           ├── _overview.md          # File overview
+│           └── job_*.md              # Individual migration jobs
 ├── services/                         # If submodules found
 │   └── {service-name}/
 │       ├── analysis/service_context.json   # LLM implementation guide
@@ -367,6 +380,42 @@ Uses iterative loop because: write code → test → fix errors → repeat until
 
 Uses iterative loop because: run tests → fix failures → re-run until all pass.
 
+### Large File Migration (For Files >400 Lines)
+
+For PHP files that exceed 400 lines (e.g., item.php at 3,670 lines), the toolkit automatically:
+1. Chunks files at logical boundaries (functions, classes, HTML tags)
+2. Generates sequential, non-overlapping migration jobs
+3. Each job fits within Claude's context window (~400 lines)
+
+**View available jobs:**
+```bash
+cat output/jobs/migration/_index.md
+```
+
+**Run jobs automatically (each in its own Claude session):**
+```bash
+# Run ALL large file migration jobs
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated
+
+# Run jobs for a specific file only
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/item -o ./migrated
+
+# Dry run - preview what would be executed
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration --dry-run
+
+# Resume from a specific job number
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration --continue-from 5
+```
+
+**Manual execution (alternative):**
+```bash
+# Copy job to clipboard for Claude web UI
+cat output/jobs/migration/item/job_001.md | pbcopy
+
+# Or run directly with Claude CLI
+cat output/jobs/migration/item/job_001.md | claude --print -p -
+```
+
 ### Step 7: Build & Deploy
 
 ```bash
@@ -388,12 +437,24 @@ nx run-many --target=build --all
 │  PHP Code   │    │ Architecture│    │   Reports   │    │  Workspace  │    │  Services   │    │  & Test     │    │             │
 └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
      auto            1 prompt          1 prompt            auto           migration-steps.md  1 loop total     nx affected
-                     ↓                                                     (1 loop/module)
-              migration-steps.md
-              (generated here)
+       │             ↓                                                     (1 loop/module)
+       │      migration-steps.md                                                  │
+       │      (generated here)                                                    │
+       │                                                                          │
+       └──────────────────────────────────────────────────────────────────────────┤
+       │                                                                          │
+       ▼                                                                          ▼
+  ┌──────────────────┐                                              ┌──────────────────┐
+  │  Large Files     │  ──────────────────────────────────────────> │  Job Runner      │
+  │  >400 lines      │                                              │  (separate       │
+  │  → chunked       │                                              │   sessions)      │
+  │  → jobs created  │                                              │                  │
+  └──────────────────┘                                              └──────────────────┘
 ```
 
 **Key insight:** Step 2 generates `migration-steps.md` with explicit commands for each module. Step 5 executes those commands one by one.
+
+**Large files:** Files >400 lines are automatically chunked during analysis and converted to sequential migration jobs. Run these with `run_migration_jobs.sh` - each job executes in its own Claude session to stay within context limits.
 
 See [SYSTEM_FLOW.md](./SYSTEM_FLOW.md) for detailed workflow.
 
@@ -525,6 +586,7 @@ Options:
   -a, --analysis <path>     Path to legacy_analysis.json (required)
   -r, --routes <path>       Path to routes.json (optional)
   -d, --database <path>     Path to database schema directory (optional)
+  -c, --chunks <path>       Path to chunks directory (optional)
   -o, --output <path>       Output path (default: output/analysis/architecture_context.json)
   -s, --split               Split into 4 files for larger context window (~113KB total)
 ```
@@ -547,6 +609,81 @@ Options:
 - ALL files with complexity metrics
 - ALL database tables with columns
 - Dependency graph, external APIs, global state
+- Large file chunk metadata (when --chunks provided)
+
+### chunk_legacy_php.sh
+
+Splits large PHP files at logical boundaries for context-aware processing.
+
+```bash
+./scripts/chunk_legacy_php.sh <php_file> <output_dir> [lines_per_chunk]
+
+Arguments:
+  php_file           Path to PHP file to chunk
+  output_dir         Output directory for chunks
+  lines_per_chunk    Lines per chunk (default: 400)
+
+Output:
+  output_dir/
+  ├── manifest.json      # Chunk metadata and dependencies
+  ├── chunk_001.php      # First chunk
+  ├── chunk_002.php      # Second chunk
+  └── ...
+```
+
+Chunks at logical boundaries: function definitions, class declarations, HTML tags.
+
+### generate_chunk_jobs.py
+
+Generates sequential, non-overlapping migration jobs from chunked PHP files.
+
+```bash
+python scripts/generate_chunk_jobs.py [options]
+
+Options:
+  -c, --chunks <dir>        Path to chunks directory (required)
+  -o, --output <dir>        Output directory for jobs (required)
+  --lines-per-job <n>       Target lines per job (default: 400)
+
+Output:
+  output_dir/
+  ├── _index.md             # Index of all jobs
+  └── {filename}/
+      ├── _overview.md      # File overview and job listing
+      ├── job_001.md        # First migration job
+      ├── job_002.md        # Second migration job
+      └── ...
+```
+
+Each job is self-contained with:
+- Line range to migrate
+- Dependencies from manifest
+- Migration instructions
+- Context about surrounding code
+
+### run_migration_jobs.sh
+
+Runs migration jobs sequentially, each in its own Claude CLI session.
+
+```bash
+./scripts/run_migration_jobs.sh -j <jobs_path> [-o <output_dir>] [options]
+
+Required:
+  -j, --jobs <path>       Path to jobs directory, file directory, or single job
+
+Options:
+  -o, --output <dir>      Output directory for results (default: ./migrated)
+  --dry-run               Show what would run without executing
+  --continue-from <n>     Resume from specific job number
+  --timeout <seconds>     Timeout per job (default: 300)
+
+Examples:
+  ./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated
+  ./scripts/run_migration_jobs.sh -j ./output/jobs/migration/item --dry-run
+  ./scripts/run_migration_jobs.sh -j ./output/jobs/migration --continue-from 5
+```
+
+Each job runs in a fresh Claude session to avoid context window overflow.
 
 ## Prompt Reference
 
@@ -614,6 +751,8 @@ Quick fixes:
 - **Test failures**: Check mock setup and async handling
 - **Ralph loop stuck**: Review completion promise format
 - **macOS timeout issues**: Install coreutils (`brew install coreutils`) for `gtimeout`, or the script runs without timeouts
+- **Job runner fails**: Check Claude CLI is installed (`claude --version`), verify job files exist
+- **Job timeout**: Increase timeout with `--timeout 600`, or run single jobs to debug
 
 ## License
 

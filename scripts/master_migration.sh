@@ -657,6 +657,21 @@ phase1_analysis() {
             else
                 echo -e "  ${GREEN}✓${NC} Chunking complete"
             fi
+
+            # Generate migration job files for chunked files
+            echo ""
+            echo -e "  ${CYAN}Generating migration jobs for large files...${NC}"
+            if python3 "$SCRIPT_DIR/generate_chunk_jobs.py" \
+                -c "$OUTPUT_DIR/analysis/chunks" \
+                -s "$PROJECT_ROOT" \
+                -o "$OUTPUT_DIR/jobs/migration" 2>&1 | grep -E "^(  Generated|Generated|Output:)"; then
+                JOB_COUNT=$(find "$OUTPUT_DIR/jobs/migration" -name "job_*.md" 2>/dev/null | wc -l | tr -d ' ')
+                if [ "$JOB_COUNT" -gt 0 ]; then
+                    echo -e "  ${GREEN}✓${NC} Generated $JOB_COUNT migration jobs in output/jobs/migration/"
+                fi
+            else
+                echo -e "  ${YELLOW}!${NC} Job generation failed (non-fatal)"
+            fi
         else
             echo -e "  ${GREEN}✓${NC} No files need chunking (all < 400 lines)"
         fi
@@ -676,6 +691,11 @@ phase1_analysis() {
 
     # Include database directory for schema
     CONTEXT_CMD="$CONTEXT_CMD -d $OUTPUT_DIR/database"
+
+    # Include chunks directory for large file info
+    if [ -d "$OUTPUT_DIR/analysis/chunks" ]; then
+        CONTEXT_CMD="$CONTEXT_CMD -c $OUTPUT_DIR/analysis/chunks"
+    fi
 
     # Use split mode for comprehensive context across multiple files
     CONTEXT_CMD="$CONTEXT_CMD --split"
