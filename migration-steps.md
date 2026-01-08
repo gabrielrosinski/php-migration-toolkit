@@ -11,11 +11,13 @@ This document contains explicit migration commands for each module/service in th
 
 Before running any migration commands:
 
-1. **Analysis Complete**
+1. **Analysis Complete** (Phases 0-5)
    - [x] `output/analysis/architecture_context.json` exists
    - [x] `output/analysis/architecture_routes.json` exists
    - [x] `output/analysis/architecture_files.json` exists
    - [x] `output/analysis/architecture_security_db.json` exists
+   - [x] `output/analysis/SYNTHESIS.json` exists (Phase 5 - architectural synthesis)
+   - [x] `output/analysis/SYNTHESIS.md` exists (human-readable summary)
    - [x] `output/analysis/ARCHITECTURE.md` exists
    - [x] `output/analysis/NESTJS_BEST_PRACTICES.md` exists
 
@@ -39,13 +41,29 @@ Before running any migration commands:
 
 ## Migration Overview
 
-| Phase | Description | Modules | Est. Iterations |
-|-------|-------------|---------|-----------------|
-| **1** | Gateway Foundation | 3 | 60 |
-| **2** | Gateway Modules | 14 | 350 |
-| **3** | Extracted Microservices | 1 | 30 |
-| **4** | Integration & Validation | 2 | 65 |
-| **Total** | | **20** | **~505** |
+**Note:** Module recommendations and migration order are now driven by `SYNTHESIS.json` (Phase 5 output).
+The synthesis correlates routes → files → tables to compute optimal service boundaries.
+
+| Phase | Description | Modules | Jobs | Est. Iterations |
+|-------|-------------|---------|------|-----------------|
+| **1** | Gateway Foundation | 3 | 3 (setup.php) | 60 + 3 jobs |
+| **2** | Gateway Modules | 14 | 15 (index, item✅, bms) | 350 + 15 jobs |
+| **3** | Extracted Microservices | 1 | 0 | 30 |
+| **4** | Integration & Validation | 2 | 0 | 65 |
+| **Total** | | **20** | **18 jobs** | **~505 + 18 jobs** |
+
+**Large File Jobs Summary:**
+- `setup.php` → 3 jobs (prerequisite for Phase 1.2)
+- `cats/index.php` → 3 jobs (prerequisite for Phase 2.1)
+- `files/item.php` → 9 jobs ✅ DONE (Phase 2.2)
+- `files/bms.php` → 3 jobs (prerequisite for Phase 2.7)
+
+**View synthesis recommendations:**
+```bash
+cat output/analysis/SYNTHESIS.md
+# Or for machine-readable data:
+python3 -c "import json; s=json.load(open('output/analysis/SYNTHESIS.json')); print([m['name'] for m in s['module_recommendations']])"
+```
 
 ---
 
@@ -63,9 +81,37 @@ Before running any migration commands:
 
 ### 1.2 Config Module
 
-**Complexity:** High (3 files, 1,426 lines)
-**Estimated Iterations:** 35
+**Complexity:** High (3 files + setup.php, 2,505 lines total)
+**Estimated Iterations:** 35 (+ 3 migration jobs)
 **Prompt:** `prompts/migration/1.2-config-module.md`
+
+#### ⚠️ PREREQUISITE: Migrate setup.php First (3 Jobs)
+
+`setup.php` (1,079 lines) contains foundational utilities used by almost ALL other modules.
+**Run these jobs BEFORE the Config module prompt:**
+
+```bash
+# View what's in setup.php
+cat output/jobs/migration/setup/_overview.md
+
+# Run setup.php migration jobs (3 jobs, each in separate Claude session)
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/setup -o ./migrated
+
+# Or run manually one at a time:
+# Job 1: Lines 1-407 (prepareRedisKey, createDeepLink, getDbNameFromLangByKey, +19 more)
+cat output/jobs/migration/setup/job_001.md | claude --print -p -
+
+# Job 2: Lines 408-821 (getIdComputer, isApplication, isMobile, +14 more)
+cat output/jobs/migration/setup/job_002.md | claude --print -p -
+
+# Job 3: Lines 822-1079 (formatSliderImagePath, getWorlds, blackFriday, +8 more)
+cat output/jobs/migration/setup/job_003.md | claude --print -p -
+```
+
+**After setup.php jobs complete:**
+1. Review outputs in `./migrated/setup/`
+2. Integrate common utilities into `libs/common/`
+3. Then run the Config module prompt:
 
 ```bash
 "/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "$(cat prompts/migration/1.2-config-module.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 35
@@ -87,9 +133,37 @@ Before running any migration commands:
 
 ### 2.1 Categories Module
 
-**Complexity:** High (9 files, 3,490 lines, complexity: 512)
-**Estimated Iterations:** 35
+**Complexity:** High (9 files + cats/index.php, 4,412 lines total, complexity: 512)
+**Estimated Iterations:** 35 (+ 3 migration jobs)
 **Prompt:** `prompts/migration/2.1-categories-module.md`
+
+#### ⚠️ PREREQUISITE: Migrate cats/index.php First (3 Jobs)
+
+`cats/index.php` (922 lines) is the main categories entry point.
+**Run these jobs BEFORE the Categories module prompt:**
+
+```bash
+# View what's in cats/index.php
+cat output/jobs/migration/index/_overview.md
+
+# Run cats/index.php migration jobs (3 jobs, each in separate Claude session)
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/index -o ./migrated
+
+# Or run manually one at a time:
+# Job 1: Lines 1-397 (main entry point logic)
+cat output/jobs/migration/index/job_001.md | claude --print -p -
+
+# Job 2: Lines 398-800 (normalizeSelect, buildSeoData, cleanSearchWord, +7 more)
+cat output/jobs/migration/index/job_002.md | claude --print -p -
+
+# Job 3: Lines 801-923 (getBlackFridaySliders, getBannerFromSelect, getBoxForWorld)
+cat output/jobs/migration/index/job_003.md | claude --print -p -
+```
+
+**After cats/index.php jobs complete:**
+1. Review outputs in `./migrated/index/`
+2. Integrate into the Categories module
+3. Then run the Categories module prompt:
 
 ```bash
 "/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "$(cat prompts/migration/2.1-categories-module.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 35
@@ -103,7 +177,11 @@ Before running any migration commands:
 
 **Note:** item.php is 3,671 lines. Use migration jobs for this file:
 ```bash
+# Sequential (one job at a time)
 ./scripts/run_migration_jobs.sh -j ./output/jobs/migration/item -o ./migrated
+
+# Parallel (4 terminals running simultaneously)
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/item -o ./migrated -p 4 --monitor
 ```
 
 For the rest of the products module:
@@ -154,9 +232,37 @@ For the rest of the products module:
 
 ### 2.7 BMS Module
 
-**Complexity:** High (797 lines, complexity: 169)
-**Estimated Iterations:** 25
+**Complexity:** High (files/bms.php 796 lines, complexity: 169)
+**Estimated Iterations:** 25 (+ 3 migration jobs)
 **Prompt:** `prompts/migration/2.7-bms-module.md`
+
+#### ⚠️ PREREQUISITE: Migrate files/bms.php First (3 Jobs)
+
+`files/bms.php` (796 lines) is the main BMS (Bundle Management System) file.
+**Run these jobs BEFORE the BMS module prompt:**
+
+```bash
+# View what's in files/bms.php
+cat output/jobs/migration/bms/_overview.md
+
+# Run files/bms.php migration jobs (3 jobs, each in separate Claude session)
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/bms -o ./migrated
+
+# Or run manually one at a time:
+# Job 1: Lines 1-396 (insertLogView, bonusCalculate, getPhoneBms, bmsIp, +4 more)
+cat output/jobs/migration/bms/job_001.md | claude --print -p -
+
+# Job 2: Lines 397-795 (get_price_5, buildBMS, fastDelivery, buildBMSData, +11 more)
+cat output/jobs/migration/bms/job_002.md | claude --print -p -
+
+# Job 3: Lines 796-797 (closing code)
+cat output/jobs/migration/bms/job_003.md | claude --print -p -
+```
+
+**After files/bms.php jobs complete:**
+1. Review outputs in `./migrated/bms/`
+2. Integrate into the BMS module
+3. Then run the BMS module prompt:
 
 ```bash
 "/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "$(cat prompts/migration/2.7-bms-module.md)" --completion-promise "SERVICE_COMPLETE" --max-iterations 25
@@ -270,54 +376,129 @@ For the rest of the products module:
 
 ---
 
-## Phase 5: Large File Migration Jobs
+## Reference: Large File Migration Job Commands
 
-For PHP files over 400 lines (item.php, setup.php, etc.), use the automated job runner.
+Large file jobs are now **integrated into their respective module sections** (1.2, 2.1, 2.2, 2.7).
+This section provides quick reference commands.
 
-### View Available Jobs
-```bash
-# See all large files and their job counts
-cat output/jobs/migration/_index.md
-
-# See jobs for a specific file
-cat output/jobs/migration/item/_overview.md
+### Job Locations
+```
+output/jobs/migration/
+├── _index.md                 # Master index
+├── chunked_files_summary.json
+├── setup/                    # → Phase 1.2 Config Module
+│   ├── _overview.md
+│   └── job_001.md - job_003.md
+├── index/                    # → Phase 2.1 Categories Module (cats/index.php)
+│   ├── _overview.md
+│   └── job_001.md - job_003.md
+├── item/                     # → Phase 2.2 Products Module ✅ DONE
+│   ├── _overview.md
+│   └── job_001.md - job_009.md
+└── bms/                      # → Phase 2.7 BMS Module
+    ├── _overview.md
+    └── job_001.md - job_003.md
 ```
 
-### Run Jobs Automatically
+### Quick Commands
 ```bash
-# Run ALL large file migration jobs (each in its own Claude session)
-./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated
+# View all jobs
+cat output/jobs/migration/_index.md
 
-# Run jobs for a specific file only
-./scripts/run_migration_jobs.sh -j ./output/jobs/migration/item -o ./migrated
+# Run ALL pending jobs (skip completed item.php jobs 1-9)
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated --continue-from 10
 
-# Run a single job
-./scripts/run_migration_jobs.sh -j ./output/jobs/migration/item/job_001.md -o ./migrated
+# Run specific file jobs
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/setup -o ./migrated
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/index -o ./migrated
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration/bms -o ./migrated
 
-# Resume from a specific job number
-./scripts/run_migration_jobs.sh -j ./output/jobs/migration --continue-from 5
-
-# Dry run - preview what would be executed
+# Dry run first
 ./scripts/run_migration_jobs.sh -j ./output/jobs/migration --dry-run
+```
+
+### Manual Execution (Alternative)
+```bash
+# Run single job in fresh Claude session
+cat output/jobs/migration/setup/job_001.md | claude --print -p -
+
+# Or copy to clipboard and paste into Claude web UI
+cat output/jobs/migration/setup/job_001.md | pbcopy
 ```
 
 ---
 
 ## Progress Tracking
 
+### Large File Migration Jobs (Run FIRST - Prerequisites)
+
+| File | Lines | Jobs | Status | Integrates Into |
+|------|-------|------|--------|-----------------|
+| `setup.php` | 1,079 | 3 | ⏳ | Phase 1.2 Config Module |
+| `cats/index.php` | 922 | 3 | ⏳ | Phase 2.1 Categories Module |
+| `files/item.php` | 3,670 | 9 | ✅ DONE | Phase 2.2 Products Module |
+| `files/bms.php` | 796 | 3 | ⏳ | Phase 2.7 BMS Module |
+
+**Total: 18 jobs (9 completed, 9 pending)**
+
+#### ⚡ SINGLE COMMAND: Run All Pending Jobs in Parallel
+
+```bash
+# Run ALL pending large file jobs (5 parallel terminals, auto-skip completed)
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated -p 5 --monitor
+
+# This will:
+# 1. Auto-detect 18 total jobs across 4 files
+# 2. Skip 9 completed item.php jobs (checks for existing output files)
+# 3. Run remaining 9 jobs in 5 parallel Terminal windows
+# 4. Each terminal opens a fresh Claude Code session
+# 5. Monitor progress until all complete
+```
+
+**Alternative terminals:**
+```bash
+# Use iTerm2 instead of Terminal.app
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated -p 5 --monitor --terminal iterm
+
+# Use tmux (creates new windows in existing session)
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated -p 5 --monitor --terminal tmux
+
+# Force re-run all jobs (ignore completed)
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated -p 5 --no-skip --monitor
+```
+
+**Dry run first (preview without executing):**
+```bash
+./scripts/run_migration_jobs.sh -j ./output/jobs/migration -o ./migrated -p 5 --dry-run
+```
+
 ### Phase 1: Foundation
 - [ ] 1.1 Health Module (10 iterations)
-- [ ] 1.2 Config Module (35 iterations)
+- [ ] 1.2 Config Module
+  - [ ] setup.php Job 1 (lines 1-407)
+  - [ ] setup.php Job 2 (lines 408-821)
+  - [ ] setup.php Job 3 (lines 822-1079)
+  - [ ] Config module prompt (35 iterations)
 - [ ] 1.3 Auth Module (15 iterations)
 
 ### Phase 2: Gateway Modules
-- [ ] 2.1 Categories Module (35 iterations)
-- [ ] 2.2 Products Module (50 iterations)
+- [ ] 2.1 Categories Module
+  - [ ] cats/index.php Job 1 (lines 1-397)
+  - [ ] cats/index.php Job 2 (lines 398-800)
+  - [ ] cats/index.php Job 3 (lines 801-923)
+  - [ ] Categories module prompt (35 iterations)
+- [ ] 2.2 Products Module
+  - [x] item.php Job 1-9 (✅ DONE - outputs in migrated/item/)
+  - [ ] Products module prompt (50 iterations)
 - [ ] 2.3 Search Module (20 iterations)
 - [ ] 2.4 Content Module (30 iterations)
 - [ ] 2.5 Promotions Module (30 iterations)
 - [ ] 2.6 Cart Module (20 iterations)
-- [ ] 2.7 BMS Module (25 iterations)
+- [ ] 2.7 BMS Module
+  - [ ] files/bms.php Job 1 (lines 1-396)
+  - [ ] files/bms.php Job 2 (lines 397-795)
+  - [ ] files/bms.php Job 3 (lines 796-797)
+  - [ ] BMS module prompt (25 iterations)
 - [ ] 2.8 Bidding Module (15 iterations)
 - [ ] 2.9 Notifications Module (15 iterations)
 - [ ] 2.10 Stores Module (15 iterations)
@@ -404,3 +585,14 @@ rm -rf ../m-action-api/
 # Re-run workspace creation
 ./scripts/create_nx_workspace.sh -o ./output -n m-action-api
 ```
+
+**6. Synthesis Issues**
+```
+Error: SYNTHESIS.json not found
+```
+Fix: Re-run Phase 5 (synthesis):
+```bash
+./scripts/master_migration.sh /path/to/php -o ./output -r 5
+```
+
+See `docs/TROUBLESHOOTING.md` for detailed synthesis troubleshooting.

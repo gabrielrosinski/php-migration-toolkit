@@ -139,9 +139,30 @@ Now design the Nx monorepo architecture using your research and the analysis fil
 
 ## INPUT DATA FOR DESIGN
 
-**Read these files:**
+**Read these files in order of priority:**
 
-### 1. Knowledge Sources
+### 1. PRIMARY INPUT: Architectural Synthesis (MUST READ FIRST)
+
+**`output/analysis/SYNTHESIS.json`** - The intelligent synthesis of ALL gathered data
+
+This file contains **data-driven architectural decisions** including:
+- **Module recommendations** - Which modules to create with rationale
+- **Migration order** - Priority order based on dependencies and risk
+- **Data coupling analysis** - Which tables are accessed together
+- **Security hotspots** - Files requiring immediate attention
+- **Key architectural decisions** - Pre-computed decisions with rationale
+
+**Also read:** `output/analysis/SYNTHESIS.md` - Human-readable summary
+
+**CRITICAL:** The SYNTHESIS.json already contains intelligent analysis of:
+- Route → File → Table correlations
+- Service boundary recommendations
+- Security prioritization
+- Migration risk assessment
+
+**Your job is to VALIDATE and REFINE these recommendations, not start from scratch.**
+
+### 2. Knowledge Sources
 
 #### A. `output/analysis/NESTJS_BEST_PRACTICES.md` - Your Phase 1 Research
 - **Contains NestJS implementation patterns you documented**
@@ -151,20 +172,21 @@ Now design the Nx monorepo architecture using your research and the analysis fil
 - **Contains architectural patterns for service decomposition**
 - Reference this when making service boundary decisions
 
-**How to use both:**
+**How to use sources:**
 | Decision Type | Primary Source |
 |---------------|----------------|
+| Module structure & boundaries | SYNTHESIS.json (already computed) |
+| Migration order | SYNTHESIS.json (already computed) |
 | NestJS code patterns (guards, pipes, DTOs) | NESTJS_BEST_PRACTICES.md |
-| Service boundaries & decomposition | MICROSERVICES_PATTERNS.md |
+| Service decomposition patterns | MICROSERVICES_PATTERNS.md |
 | Transport selection (TCP, gRPC, events) | Both (implementation + when to use) |
-| Data ownership & cross-service communication | MICROSERVICES_PATTERNS.md |
 | Resilience implementation | Both (patterns + NestJS code) |
 
-### 2. Architecture Context (4 files)
-Read ALL 4 files to get the complete picture:
+### 3. Architecture Context (Reference for Details)
+Use these for **detailed lookups** when needed:
 
 1. **`output/analysis/architecture_context.json`** - Core context
-   - Entry points, project info, recommended services, config, globals, dependencies
+   - Entry points, project info, config, globals, dependencies
 
 2. **`output/analysis/architecture_routes.json`** - Routes
    - ALL routes with method, path, handler, domain, auth requirements
@@ -175,12 +197,12 @@ Read ALL 4 files to get the complete picture:
 4. **`output/analysis/architecture_security_db.json`** - Security & Database
    - ALL security issues grouped by type, database schema with all tables/columns, external APIs
 
-### 3. Extracted Services Manifest (if exists)
+### 4. Extracted Services Manifest (if exists)
 **`output/analysis/extracted_services.json`** - Pre-extracted microservices
 - **If this file exists, you MUST include these services in your design**
 - Each extracted service becomes a separate NestJS microservice app
 
-### 4. Reference Documents
+### 5. Reference Documents
 - **`MICROSERVICES_PATTERNS.md`** - Architecture patterns reference
 - **`output/analysis/legacy_analysis.md`** - Human-readable analysis summary (optional)
 
@@ -188,16 +210,24 @@ Read ALL 4 files to get the complete picture:
 
 ## YOUR TASK
 
-Design a complete **Nx monorepo architecture** by:
+The SYNTHESIS.json has already analyzed the codebase and computed recommendations. Your task is to **validate, refine, and document** the architecture:
 
-1. **Analyzing domains** - Identify business domains from the legacy code
-2. **Defining bounded contexts** - Group related functionality
-3. **Designing Nx structure** - Define apps and shared libraries
-4. **Planning data architecture** - Assign tables to apps
-5. **Planning communication** - Sync vs async patterns
-6. **Authentication strategy** - Map PHP sessions to NestJS auth
-7. **Data migration strategy** - How to migrate data safely
-8. **Creating migration plan** - Priority order for implementation
+1. **Review synthesis recommendations** - Read SYNTHESIS.json module_recommendations
+2. **Validate service boundaries** - Confirm or adjust the proposed module structure
+3. **Refine Nx structure** - Finalize apps and shared libraries based on synthesis
+4. **Document data architecture** - Use synthesis table_ownership, adjust if needed
+5. **Define communication patterns** - Use synthesis data_couplings for decisions
+6. **Authentication strategy** - Map PHP sessions to NestJS auth (synthesis identifies auth module)
+7. **Address security hotspots** - Use synthesis security_analysis to prioritize
+8. **Finalize migration plan** - Use synthesis migration_order, adjust if needed
+
+**Key difference from starting from scratch:**
+- Module boundaries are PRE-COMPUTED based on data coupling analysis
+- Migration order is PRE-COMPUTED based on dependencies and risk
+- Security hotspots are PRE-IDENTIFIED for prioritization
+- Route → File → Table correlations are PRE-MAPPED
+
+Your job is to apply architectural expertise to REFINE these recommendations, not recreate them.
 
 ---
 

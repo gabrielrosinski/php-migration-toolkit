@@ -7,15 +7,16 @@ This guide covers common issues encountered during PHP to NestJS migration and t
 ## Table of Contents
 
 1. [Analysis Phase Issues](#analysis-phase-issues)
-2. [Route Extraction Issues](#route-extraction-issues)
-3. [Database Schema Issues](#database-schema-issues)
-4. [Submodule Extraction Issues](#submodule-extraction-issues)
-5. [NestJS Build Issues](#nestjs-build-issues)
-6. [TypeORM Issues](#typeorm-issues)
-7. [Testing Issues](#testing-issues)
-8. [Ralph Wiggum Loop Issues](#ralph-wiggum-loop-issues)
-9. [Security Migration Issues](#security-migration-issues)
-10. [Context7 MCP Issues](#context7-mcp-issues)
+2. [Architectural Synthesis Issues](#architectural-synthesis-issues)
+3. [Route Extraction Issues](#route-extraction-issues)
+4. [Database Schema Issues](#database-schema-issues)
+5. [Submodule Extraction Issues](#submodule-extraction-issues)
+6. [NestJS Build Issues](#nestjs-build-issues)
+7. [TypeORM Issues](#typeorm-issues)
+8. [Testing Issues](#testing-issues)
+9. [Ralph Wiggum Loop Issues](#ralph-wiggum-loop-issues)
+10. [Security Migration Issues](#security-migration-issues)
+11. [Context7 MCP Issues](#context7-mcp-issues)
 
 ---
 
@@ -63,6 +64,201 @@ If SQL queries aren't detected:
    ```
 
 2. The analyzer looks for common patterns. Add custom patterns if needed in `extract_legacy_php.py`
+
+---
+
+## Architectural Synthesis Issues
+
+The synthesis phase (Phase 5) correlates all gathered data to produce actionable recommendations. This section covers common issues.
+
+### SYNTHESIS.json not generated
+
+If Phase 5 completes but `output/analysis/SYNTHESIS.json` is missing:
+
+1. Check that prerequisite files exist:
+   ```bash
+   ls -la output/analysis/legacy_analysis.json
+   ls -la output/analysis/routes.json
+   ls -la output/database/schema_inferred.json
+   ```
+
+2. Run synthesis manually with verbose output:
+   ```bash
+   python scripts/generate_architectural_synthesis.py \
+     --output ./output \
+     --verbose
+   ```
+
+3. Check Python dependencies:
+   ```bash
+   pip3 install chardet
+   ```
+
+### Empty module recommendations
+
+If SYNTHESIS.json has `module_recommendations: []`:
+
+1. Verify routes were extracted:
+   ```bash
+   python3 -c "import json; r=json.load(open('output/analysis/routes.json')); print(f'Routes: {len(r.get(\"routes\", []))}')"
+   ```
+
+2. Verify PHP functions were analyzed:
+   ```bash
+   python3 -c "import json; d=json.load(open('output/analysis/legacy_analysis.json')); print(f'Functions: {sum(len(f.get(\"functions\",[]))for f in d.get(\"all_files\",[]))}')"
+   ```
+
+3. If both are zero, re-run Phase 1 and 2:
+   ```bash
+   ./scripts/master_migration.sh /path/to/php -o ./output -r 1
+   ```
+
+### Route-to-file correlation missing
+
+If `route_to_file_mapping` in SYNTHESIS.json is empty but routes exist:
+
+1. Check that routes have handler information:
+   ```bash
+   python3 -c "
+   import json
+   routes = json.load(open('output/analysis/routes.json'))
+   for r in routes.get('routes', [])[:5]:
+       print(f\"{r.get('path')}: handler={r.get('handler')}\")
+   "
+   ```
+
+2. If handlers are missing, the route extraction may need nginx config:
+   ```bash
+   ./scripts/master_migration.sh /path/to/php -o ./output \
+     --nginx /path/to/nginx.conf -r 2
+   ```
+
+### Data coupling analysis incomplete
+
+If `data_couplings` is empty or missing tight couplings:
+
+1. Verify database tables were extracted:
+   ```bash
+   python3 -c "import json; s=json.load(open('output/database/schema_inferred.json')); print(f'Tables: {len(s.get(\"tables\", []))}')"
+   ```
+
+2. Check that PHP files reference tables:
+   ```bash
+   python3 -c "
+   import json
+   d = json.load(open('output/analysis/legacy_analysis.json'))
+   tables_found = set()
+   for f in d.get('all_files', []):
+       for func in f.get('functions', []):
+           tables_found.update(func.get('tables_accessed', []))
+   print(f'Tables referenced in PHP: {len(tables_found)}')
+   print(sorted(tables_found)[:10])
+   "
+   ```
+
+3. If no tables are found, the PHP analysis may not be detecting SQL patterns. Check `extract_legacy_php.py` for custom query patterns.
+
+### Security hotspots not detected
+
+If `security_hotspots` is empty but you know there are issues:
+
+1. Check raw security analysis:
+   ```bash
+   python3 -c "
+   import json
+   d = json.load(open('output/analysis/legacy_analysis.json'))
+   issues = d.get('security_issues', [])
+   print(f'Security issues found: {len(issues)}')
+   for i in issues[:5]:
+       print(f\"  {i.get('type')}: {i.get('file')}\")
+   "
+   ```
+
+2. Security detection relies on pattern matching. Common patterns that may be missed:
+   ```php
+   // Custom ORM calls (may not be detected as SQL)
+   $db->rawQuery("SELECT * FROM users WHERE id = $id");
+
+   // Indirect eval (may not be detected)
+   $func = 'eval';
+   $func($code);
+   ```
+
+3. Add custom patterns to `extract_legacy_php.py` if needed.
+
+### Migration order seems wrong
+
+If the recommended migration order doesn't make sense:
+
+1. Review dependency analysis:
+   ```bash
+   python3 -c "
+   import json
+   s = json.load(open('output/analysis/SYNTHESIS.json'))
+   for m in s.get('module_recommendations', []):
+       print(f\"{m['priority']}. {m['name']}: deps={m.get('dependencies', [])}\")
+   "
+   ```
+
+2. The order is computed based on:
+   - Number of dependencies (fewer = earlier)
+   - Security risk (lower = earlier)
+   - Complexity (lower = earlier)
+
+3. Override manually in ARCHITECTURE.md if needed. The architect prompt says to "validate and refine" the recommendations.
+
+### SYNTHESIS.md not human-readable
+
+If SYNTHESIS.md is malformed or hard to read:
+
+1. Regenerate just the markdown:
+   ```bash
+   python scripts/generate_architectural_synthesis.py \
+     --output ./output \
+     --verbose
+   ```
+
+2. The markdown is generated from SYNTHESIS.json. If JSON is correct but MD is wrong, check the `generate_synthesis_markdown()` function in the script.
+
+### Module scaffolding doesn't use synthesis data
+
+If `create_nx_workspace.sh` creates empty modules instead of synthesis-informed modules:
+
+1. Verify SYNTHESIS.json exists before running:
+   ```bash
+   ls -la output/analysis/SYNTHESIS.json
+   ```
+
+2. Check Step 8 output during workspace creation:
+   ```bash
+   ./scripts/create_nx_workspace.sh -o ./output 2>&1 | grep -A5 "Step 8"
+   ```
+
+3. If Step 8 shows "SYNTHESIS.json not found", re-run Phase 5:
+   ```bash
+   ./scripts/master_migration.sh /path/to/php -o ./output -r 5
+   ```
+
+### Python script errors in synthesis
+
+Common Python errors and fixes:
+
+#### `KeyError: 'routes'`
+The routes.json format may differ. Check:
+```bash
+python3 -c "import json; print(json.load(open('output/analysis/routes.json')).keys())"
+```
+
+#### `JSONDecodeError: Expecting value`
+File may be empty or corrupted. Re-run the corresponding phase.
+
+#### `FileNotFoundError`
+Missing prerequisite file. Check all required inputs exist:
+```bash
+ls output/analysis/legacy_analysis.json \
+   output/analysis/routes.json \
+   output/database/schema_inferred.json
+```
 
 ---
 

@@ -677,6 +677,35 @@ phase1_analysis() {
         fi
     fi
 
+    # Generate response contracts from return structures
+    # This captures $arr['field'] patterns that extract_legacy_php.py extracts
+    echo ""
+    echo -e "  ${CYAN}Generating response contracts...${NC}"
+
+    if [ -f "$SCRIPT_DIR/generate_response_contracts.py" ]; then
+        # Response contracts require routes.json - generate a preliminary one if it doesn't exist
+        if [ ! -f "$OUTPUT_DIR/analysis/routes.json" ]; then
+            echo -e "  ${YELLOW}!${NC} routes.json not yet available (will regenerate after Phase 2)"
+            # Create a minimal routes file for now
+            echo '{"routes": []}' > "$OUTPUT_DIR/analysis/routes.json"
+        fi
+
+        run_with_spinner "Generating response contracts" 120 \
+            python3 "$SCRIPT_DIR/generate_response_contracts.py" \
+                -a "$OUTPUT_DIR/analysis/legacy_analysis.json" \
+                -r "$OUTPUT_DIR/analysis/routes.json" \
+                -o "$OUTPUT_DIR/analysis/response_contracts.json" || {
+                    echo -e "  ${YELLOW}⚠ Response contracts generation failed (non-fatal)${NC}"
+                }
+
+        if [ -f "$OUTPUT_DIR/analysis/response_contracts.json" ]; then
+            CONTRACTS_COUNT=$(python3 -c "import json; print(len(json.load(open('$OUTPUT_DIR/analysis/response_contracts.json'))))" 2>/dev/null || echo 0)
+            echo -e "  ${GREEN}✓${NC} Generated response contracts ($CONTRACTS_COUNT routes)"
+        fi
+    else
+        echo -e "  ${YELLOW}!${NC} generate_response_contracts.py not found (skipping)"
+    fi
+
     # Generate compact architecture context for LLM consumption
     echo ""
     echo -e "  ${CYAN}Generating compact architecture context...${NC}"
@@ -783,6 +812,24 @@ phase2_routes() {
         fi
     fi
 
+    # Regenerate response contracts with full routes data
+    if [ -f "$SCRIPT_DIR/generate_response_contracts.py" ] && [ -f "$OUTPUT_DIR/analysis/legacy_analysis.json" ]; then
+        echo ""
+        run_with_spinner "Regenerating response contracts with routes" 120 \
+            python3 "$SCRIPT_DIR/generate_response_contracts.py" \
+                -a "$OUTPUT_DIR/analysis/legacy_analysis.json" \
+                -r "$OUTPUT_DIR/analysis/routes.json" \
+                -o "$OUTPUT_DIR/analysis/response_contracts.json" || {
+                    echo -e "  ${YELLOW}⚠ Response contracts regeneration failed (non-fatal)${NC}"
+                }
+
+        if [ -f "$OUTPUT_DIR/analysis/response_contracts.json" ]; then
+            CONTRACTS_WITH_FIELDS=$(python3 -c "import json; c=json.load(open('$OUTPUT_DIR/analysis/response_contracts.json')); print(sum(1 for r in c.values() if r.get('response',{}).get('fields')))" 2>/dev/null || echo 0)
+            TOTAL_CONTRACTS=$(python3 -c "import json; print(len(json.load(open('$OUTPUT_DIR/analysis/response_contracts.json'))))" 2>/dev/null || echo 0)
+            echo -e "  ${GREEN}✓${NC} Response contracts: $CONTRACTS_WITH_FIELDS/$TOTAL_CONTRACTS routes have return fields"
+        fi
+    fi
+
     # Regenerate architecture context with routes included
     if [ -f "$OUTPUT_DIR/analysis/legacy_analysis.json" ]; then
         echo ""
@@ -791,6 +838,7 @@ phase2_routes() {
                 -a "$OUTPUT_DIR/analysis/legacy_analysis.json" \
                 -r "$OUTPUT_DIR/analysis/routes.json" \
                 -d "$OUTPUT_DIR/database" \
+                -c "$OUTPUT_DIR/analysis/chunks" \
                 --split \
                 -o "$OUTPUT_DIR/analysis/architecture_context.json" || {
                     echo -e "  ${YELLOW}⚠ Context update failed (non-fatal)${NC}"
@@ -901,6 +949,7 @@ phase3_database() {
                 -a "$OUTPUT_DIR/analysis/legacy_analysis.json" \
                 -r "$OUTPUT_DIR/analysis/routes.json" \
                 -d "$OUTPUT_DIR/database" \
+                -c "$OUTPUT_DIR/analysis/chunks" \
                 --split \
                 -o "$OUTPUT_DIR/analysis/architecture_context.json" || {
                     echo -e "  ${YELLOW}⚠ Context update failed (non-fatal)${NC}"
@@ -1236,31 +1285,75 @@ EOF
 }
 
 # ============================================================================
-# PHASE 5: (INTEGRATED INTO PHASE 6)
-# NestJS best practices research is now part of the system design prompt.
-# This phase is kept for backwards compatibility but just marks as complete.
+# PHASE 5: ARCHITECTURAL SYNTHESIS
+# Correlates all gathered data to produce intelligent architectural recommendations.
+# This is the critical "synthesis layer" that transforms raw data into decisions.
 # ============================================================================
-phase5_research() {
+phase5_synthesis() {
     if ! should_run_phase 5; then
-        echo -e "${YELLOW}⏭ Skipping Phase 5${NC}"
+        echo -e "${YELLOW}⏭ Skipping Phase 5: Architectural Synthesis${NC}"
         return 0
     fi
 
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}▶ PHASE 5: NestJS Best Practices (Integrated into Phase 6)${NC}"
+    echo -e "${GREEN}▶ PHASE 5: Architectural Synthesis${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${GREEN}✓${NC} Best practices research is now integrated into the system design prompt"
-    echo -e "  ${GREEN}✓${NC} Phase 6 will research NestJS patterns before designing architecture"
+    echo -e "  ${BLUE}Correlating routes → files → tables...${NC}"
+    echo -e "  ${BLUE}Analyzing data coupling patterns...${NC}"
+    echo -e "  ${BLUE}Computing service boundaries...${NC}"
+    echo -e "  ${BLUE}Identifying security hotspots...${NC}"
     echo ""
 
-    save_state 5 "integrated"
-    echo -e "${GREEN}✓ Phase 5 Complete (integrated into Phase 6)${NC}"
+    # Run the synthesis script
+    if python3 "$TOOLKIT_ROOT/scripts/generate_architectural_synthesis.py" \
+        --output "$OUTPUT_DIR" \
+        ${VERBOSE:+--verbose}; then
+        echo ""
+        echo -e "  ${GREEN}✓${NC} Synthesis complete: $OUTPUT_DIR/analysis/SYNTHESIS.json"
+        echo -e "  ${GREEN}✓${NC} Human-readable summary: $OUTPUT_DIR/analysis/SYNTHESIS.md"
+    else
+        echo -e "  ${RED}✗${NC} Synthesis failed"
+        return 1
+    fi
+
+    # Show key findings
+    if [ -f "$OUTPUT_DIR/analysis/SYNTHESIS.json" ]; then
+        echo ""
+        echo -e "  ${CYAN}Key Findings:${NC}"
+
+        TOTAL_MODULES=$(python3 -c "import json; print(json.load(open('$OUTPUT_DIR/analysis/SYNTHESIS.json'))['summary']['total_modules'])" 2>/dev/null || echo "?")
+        TOTAL_ROUTES=$(python3 -c "import json; print(json.load(open('$OUTPUT_DIR/analysis/SYNTHESIS.json'))['summary']['total_routes'])" 2>/dev/null || echo "?")
+        SECURITY_ISSUES=$(python3 -c "import json; print(json.load(open('$OUTPUT_DIR/analysis/SYNTHESIS.json'))['summary']['total_security_issues'])" 2>/dev/null || echo "?")
+        EFFORT=$(python3 -c "import json; print(json.load(open('$OUTPUT_DIR/analysis/SYNTHESIS.json'))['summary']['estimated_total_effort'])" 2>/dev/null || echo "?")
+
+        echo -e "    • Recommended modules: ${GREEN}$TOTAL_MODULES${NC}"
+        echo -e "    • Routes mapped: ${GREEN}$TOTAL_ROUTES${NC}"
+        echo -e "    • Security issues: ${YELLOW}$SECURITY_ISSUES${NC}"
+        echo -e "    • Estimated effort: ${CYAN}$EFFORT${NC}"
+
+        # Show migration order preview
+        echo ""
+        echo -e "  ${CYAN}Migration Order (first 5):${NC}"
+        python3 -c "
+import json
+with open('$OUTPUT_DIR/analysis/SYNTHESIS.json') as f:
+    data = json.load(f)
+for step in data['migration_order'][:5]:
+    risk_color = '${YELLOW}' if step['risk'] == 'medium' else ('${RED}' if step['risk'] == 'high' else '${GREEN}')
+    print(f\"    {step['step']}. {step['module']} ({step['risk']} risk, {step['effort']} effort)\")
+" 2>/dev/null || true
+    fi
+
+    echo ""
+    save_state 5 "complete"
+    echo -e "${GREEN}✓ Phase 5 Complete${NC}"
     echo ""
 }
 
 # ============================================================================
 # PHASE 6: SYSTEM DESIGN (PRINCIPAL ARCHITECT)
+# Now uses SYNTHESIS.json as primary input for data-driven decisions.
 # ============================================================================
 phase6_design() {
     if ! should_run_phase 6; then
@@ -1278,19 +1371,38 @@ phase6_design() {
     # Copy the design prompt (includes research + design phases)
     cp "$TOOLKIT_ROOT/prompts/system_design_architect.md" "$OUTPUT_DIR/prompts/system_design_prompt.md"
 
-    # Verify required input files exist
-    if [ -f "$OUTPUT_DIR/analysis/architecture_context.json" ]; then
-        CONTEXT_SIZE=$(du -k "$OUTPUT_DIR/analysis/architecture_context.json" | cut -f1)
-        echo -e "  ${GREEN}✓${NC} Architecture context ready (${CONTEXT_SIZE}KB)"
+    # Verify SYNTHESIS.json exists (PRIMARY input)
+    if [ -f "$OUTPUT_DIR/analysis/SYNTHESIS.json" ]; then
+        SYNTH_SIZE=$(du -k "$OUTPUT_DIR/analysis/SYNTHESIS.json" | cut -f1)
+        echo -e "  ${GREEN}✓${NC} SYNTHESIS.json ready (${SYNTH_SIZE}KB) - ${CYAN}PRIMARY INPUT${NC}"
+        echo -e "    Contains: module recommendations, migration order, data couplings, security hotspots"
     else
-        echo -e "  ${YELLOW}⚠${NC} architecture_context.json not found - Claude will read larger files"
+        echo -e "  ${RED}✗${NC} SYNTHESIS.json not found - run Phase 5 first!"
+        echo -e "    ${YELLOW}The synthesis provides data-driven architectural decisions.${NC}"
     fi
 
+    # Verify secondary input files
+    if [ -f "$OUTPUT_DIR/analysis/SYNTHESIS.md" ]; then
+        echo -e "  ${GREEN}✓${NC} SYNTHESIS.md ready (human-readable summary)"
+    fi
+
+    if [ -f "$OUTPUT_DIR/analysis/architecture_context.json" ]; then
+        CONTEXT_SIZE=$(du -k "$OUTPUT_DIR/analysis/architecture_context.json" | cut -f1)
+        echo -e "  ${GREEN}✓${NC} architecture_context.json ready (${CONTEXT_SIZE}KB) - detailed reference"
+    fi
+
+    echo ""
     echo "  Prepared design prompt: $OUTPUT_DIR/prompts/system_design_prompt.md"
     echo ""
     echo -e "  ${YELLOW}This prompt includes TWO phases:${NC}"
     echo "  1. Research NestJS best practices (creates NESTJS_BEST_PRACTICES.md)"
     echo "  2. Design Nx monorepo architecture (creates ARCHITECTURE.md)"
+    echo ""
+    echo -e "  ${CYAN}The SYNTHESIS.json provides:${NC}"
+    echo "    • Recommended module structure with rationale"
+    echo "    • Data-driven migration order"
+    echo "    • Security hotspots to address first"
+    echo "    • Data coupling analysis for service boundaries"
     echo ""
     echo "  Run in Claude Code using Bash tool with the Ralph Wiggum setup script."
     echo "  See CLAUDE.md for exact command syntax."
@@ -1483,8 +1595,8 @@ main() {
     phase2_routes
     phase3_database
     phase4_submodules
-    phase5_research      # Research FIRST
-    phase6_design        # Then design with knowledge
+    phase5_synthesis     # Correlate and synthesize all gathered data
+    phase6_design        # Design with synthesis-driven recommendations
     phase7_generation
     phase8_testing
     summary

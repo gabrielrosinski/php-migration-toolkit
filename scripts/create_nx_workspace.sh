@@ -1435,11 +1435,11 @@ EOF
 
 echo -e "  ${GREEN}✓${NC} Updated database library exports"
 
-# Copy migration analysis reference
+# Copy migration analysis reference (including SYNTHESIS - the primary architectural guide)
 mkdir -p "$TARGET_DIR/docs/migration"
 DOCS_COPIED=0
 DOCS_FAILED=0
-for doc_file in "architecture_context.json" "legacy_analysis.json" "routes.json" "ARCHITECTURE.md" "NESTJS_BEST_PRACTICES.md"; do
+for doc_file in "SYNTHESIS.json" "SYNTHESIS.md" "architecture_context.json" "legacy_analysis.json" "routes.json" "ARCHITECTURE.md" "NESTJS_BEST_PRACTICES.md"; do
     if [ -f "$OUTPUT_DIR/analysis/$doc_file" ]; then
         if cp "$OUTPUT_DIR/analysis/$doc_file" "$TARGET_DIR/docs/migration/" 2>&1; then
             DOCS_COPIED=$((DOCS_COPIED + 1))
@@ -1566,6 +1566,219 @@ export class AppModule {}
 EOF
 
 echo -e "  ${GREEN}✓${NC} Updated gateway app.module.ts with ConfigModule"
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Step 8: Generate Module Structure from Synthesis
+# Uses SYNTHESIS.json to create informed module scaffolding
+# ═══════════════════════════════════════════════════════════════════════════
+echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}Step 8: Generating Module Structure from Synthesis${NC}"
+echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+SYNTHESIS_FILE="$OUTPUT_DIR/analysis/SYNTHESIS.json"
+
+if [ -f "$SYNTHESIS_FILE" ]; then
+    echo -e "  ${CYAN}Reading architectural synthesis...${NC}"
+
+    # Generate module structure from synthesis using Python
+    python3 << PYEOF
+import json
+import os
+
+synthesis_file = "$SYNTHESIS_FILE"
+target_dir = "$TARGET_DIR"
+project_name = "$PROJECT_NAME"
+
+with open(synthesis_file, 'r') as f:
+    synthesis = json.load(f)
+
+modules = synthesis.get('module_recommendations', [])
+gateway_modules = [m for m in modules if not m.get('is_microservice', False)]
+
+print(f"  Found {len(gateway_modules)} gateway modules to scaffold")
+
+module_imports = []
+module_names = []
+
+for mod in gateway_modules[:15]:  # Limit to 15 modules to avoid overwhelming scaffolding
+    name = mod['name']
+    tables = mod.get('tables', [])
+    routes_count = len(mod.get('routes', []))
+    security_issues = mod.get('security_issues', 0)
+    rationale = mod.get('rationale', '')
+
+    # Create module directory
+    module_dir = os.path.join(target_dir, 'apps', 'gateway', 'src', 'modules', name)
+    os.makedirs(module_dir, exist_ok=True)
+    os.makedirs(os.path.join(module_dir, 'dto'), exist_ok=True)
+
+    # Pascal case conversion
+    pascal_name = ''.join(word.capitalize() for word in name.replace('-', '_').split('_'))
+
+    # Create module file
+    module_content = f'''import {{ Module }} from '@nestjs/common';
+// import {{ TypeOrmModule }} from '@nestjs/typeorm';
+import {{ {pascal_name}Controller }} from './{name}.controller';
+import {{ {pascal_name}Service }} from './{name}.service';
+
+/**
+ * {pascal_name} Module
+ *
+ * Migration Info (from SYNTHESIS.json):
+ * - Routes: {routes_count}
+ * - Tables: {', '.join(tables) if tables else 'None identified'}
+ * - Security issues to address: {security_issues}
+ * - Rationale: {rationale}
+ */
+@Module({{
+  imports: [
+    // TODO: TypeOrmModule.forFeature([...entities for {', '.join(tables[:3]) if tables else 'this module'}])
+  ],
+  controllers: [{pascal_name}Controller],
+  providers: [{pascal_name}Service],
+  exports: [{pascal_name}Service],
+}})
+export class {pascal_name}Module {{}}
+'''
+    with open(os.path.join(module_dir, f'{name}.module.ts'), 'w') as f:
+        f.write(module_content)
+
+    # Create controller file with route hints
+    sample_routes = mod.get('routes', [])[:5]
+    route_comments = '\n'.join(f'  // {r}' for r in sample_routes) if sample_routes else '  // Routes will be added during migration'
+
+    controller_content = f'''import {{ Controller, Get, Post, Body, Param, Query }} from '@nestjs/common';
+import {{ {pascal_name}Service }} from './{name}.service';
+
+/**
+ * {pascal_name} Controller
+ *
+ * Routes to implement (from SYNTHESIS.json):
+{route_comments}
+ */
+@Controller('{name}')
+export class {pascal_name}Controller {{
+  constructor(private readonly {name}Service: {pascal_name}Service) {{}}
+
+  // TODO: Implement routes from legacy PHP
+  // See docs/migration/SYNTHESIS.json for route details
+}}
+'''
+    with open(os.path.join(module_dir, f'{name}.controller.ts'), 'w') as f:
+        f.write(controller_content)
+
+    # Create service file with table hints
+    service_content = f'''import {{ Injectable }} from '@nestjs/common';
+// import {{ InjectRepository }} from '@nestjs/typeorm';
+// import {{ Repository }} from 'typeorm';
+
+/**
+ * {pascal_name} Service
+ *
+ * Database tables (from SYNTHESIS.json):
+ * {', '.join(tables) if tables else 'No tables identified - may be API-only'}
+ */
+@Injectable()
+export class {pascal_name}Service {{
+  // TODO: Inject repositories for: {', '.join(tables[:3]) if tables else 'relevant entities'}
+  // constructor(
+  //   @InjectRepository(Entity) private readonly repo: Repository<Entity>,
+  // ) {{}}
+}}
+'''
+    with open(os.path.join(module_dir, f'{name}.service.ts'), 'w') as f:
+        f.write(service_content)
+
+    # Create empty DTO index
+    dto_content = f'''// DTOs for {pascal_name} module
+// TODO: Create DTOs based on routes in SYNTHESIS.json
+'''
+    with open(os.path.join(module_dir, 'dto', 'index.ts'), 'w') as f:
+        f.write(dto_content)
+
+    module_imports.append(f"import {{ {pascal_name}Module }} from './modules/{name}/{name}.module';")
+    module_names.append(f'{pascal_name}Module')
+
+    print(f"    ✓ {name} ({routes_count} routes, {len(tables)} tables)")
+
+# Update app.module.ts to import generated modules
+if module_names:
+    app_module_path = os.path.join(target_dir, 'apps', 'gateway', 'src', 'app', 'app.module.ts')
+
+    imports_str = '\n'.join(module_imports)
+    modules_str = ',\n    '.join(module_names)
+
+    app_module_content = f'''import {{ Module }} from '@nestjs/common';
+import {{ ConfigModule }} from '@nestjs/config';
+import {{ AppController }} from './app.controller';
+import {{ AppService }} from './app.service';
+import configuration from '../config/configuration';
+
+// Generated module imports from SYNTHESIS.json
+{imports_str}
+
+@Module({{
+  imports: [
+    ConfigModule.forRoot({{
+      isGlobal: true,
+      load: [configuration],
+      envFilePath: ['.env.local', '.env'],
+    }}),
+    // TODO: Add TypeOrmModule.forRootAsync() here
+
+    // Feature modules (generated from synthesis)
+    {modules_str},
+  ],
+  controllers: [AppController],
+  providers: [AppService],
+}})
+export class AppModule {{}}
+'''
+    with open(app_module_path, 'w') as f:
+        f.write(app_module_content)
+
+    print(f"  ✓ Updated app.module.ts with {len(module_names)} module imports")
+
+# Create a quick reference file
+migration_order = synthesis.get('migration_order', [])
+if migration_order:
+    ref_path = os.path.join(target_dir, 'apps', 'gateway', 'MIGRATION_ORDER.md')
+    ref_content = '''# Migration Order (from SYNTHESIS.json)
+
+This is the recommended order to migrate modules, based on dependencies and risk analysis.
+
+| Step | Module | Risk | Effort | Routes | Tables |
+|------|--------|------|--------|--------|--------|
+'''
+    for step in migration_order:
+        ref_content += f"| {step['step']} | {step['module']} | {step['risk']} | {step['effort']} | {step['routes_count']} | {step['tables_count']} |\n"
+
+    ref_content += '''
+## How to Use
+
+For each module, follow this process:
+1. Read the corresponding prompt in `prompts/migration/`
+2. Run the Ralph Wiggum loop with that prompt
+3. Verify tests pass before moving to next module
+
+See `docs/migration/SYNTHESIS.md` for detailed analysis.
+'''
+    with open(ref_path, 'w') as f:
+        f.write(ref_content)
+
+    print(f"  ✓ Created MIGRATION_ORDER.md reference")
+
+print("")
+PYEOF
+
+    echo -e "  ${GREEN}✓${NC} Module structure generated from synthesis"
+else
+    echo -e "  ${YELLOW}!${NC} SYNTHESIS.json not found - skipping module generation"
+    echo -e "    ${CYAN}Run Phase 5 (Architectural Synthesis) first for informed scaffolding${NC}"
+fi
 
 echo ""
 

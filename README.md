@@ -48,6 +48,7 @@ migration-toolkit/
 │   ├── extract_routes.py                # Parses htaccess/nginx/PHP routes
 │   ├── extract_database.py              # Generates TypeORM entities from SQL
 │   ├── generate_architecture_context.py # Creates comprehensive LLM-optimized context
+│   ├── generate_architectural_synthesis.py # Correlates data, computes service boundaries
 │   ├── chunk_legacy_php.sh              # Splits large files at logical boundaries
 │   ├── generate_chunk_jobs.py           # Creates migration jobs from chunks
 │   ├── run_migration_jobs.sh            # Runs jobs in separate Claude sessions
@@ -185,7 +186,7 @@ With direct PHP file inclusion (recommended):
 - **Git submodules → Automatically extracted as NestJS microservices**
 - PHP include/require patterns → Dependency mapping
 
-**8 Automated Phases:**
+**9 Automated Phases:**
 | Phase | Description |
 |-------|-------------|
 | 0 | Environment check + auto-discovery (configs, submodules) |
@@ -193,8 +194,8 @@ With direct PHP file inclusion (recommended):
 | 2 | Route extraction (.htaccess, nginx, PHP) |
 | 3 | Database schema → TypeORM entities |
 | **4** | **Submodule extraction → NestJS microservices** (if submodules exist) |
-| 5 | NestJS best practices research (BEFORE design) |
-| 6 | System design guidance |
+| **5** | **Architectural Synthesis** - correlates routes→files→tables, computes boundaries |
+| 6 | System design guidance (uses SYNTHESIS.json) |
 | 7-8 | Service generation & testing guidance |
 
 **Outputs:**
@@ -205,6 +206,8 @@ output/
 │   ├── legacy_analysis.json          # Code + security analysis
 │   ├── routes.json                   # All routes
 │   ├── architecture_context.json     # LLM-optimized context
+│   ├── SYNTHESIS.json                # Data-driven recommendations (NEW)
+│   ├── SYNTHESIS.md                  # Human-readable summary (NEW)
 │   ├── chunks/                       # Chunked large files
 │   │   └── {filename}/
 │   │       ├── manifest.json         # Chunk metadata
@@ -240,19 +243,23 @@ output/
 
 ### Step 2: Design Architecture (Single Prompt)
 
-The analysis phase automatically generates 4 architecture context files (~113KB total) containing ALL analysis data optimized for LLM consumption.
+The analysis phase automatically generates **SYNTHESIS.json** - a data-driven architectural synthesis that includes:
+- Module recommendations with rationale
+- Migration order based on dependencies + risk
+- Data coupling analysis for service boundaries
+- Security hotspots with prioritization
 
 ```bash
-# Use the auto-generated context with the design prompt
+# Use the auto-generated synthesis with the design prompt
 claude "$(cat prompts/system_design_architect.md)"
 
-# The prompt will read from output/analysis/architecture_context.json
+# The prompt will read SYNTHESIS.json (PRIMARY) and validate/refine recommendations
 ```
 
 **Outputs:**
 
 1. `output/analysis/NESTJS_BEST_PRACTICES.md` - NestJS patterns research
-2. `output/analysis/ARCHITECTURE.md` - Complete architecture design
+2. `output/analysis/ARCHITECTURE.md` - Complete architecture design (validates synthesis)
 3. **`migration-steps.md`** - All Ralph Wiggum commands for each module
 
 The `migration-steps.md` file contains explicit, module-specific Ralph Wiggum commands with:
@@ -314,7 +321,7 @@ One command creates the complete Nx workspace based on your analysis:
 ./scripts/create_nx_workspace.sh -o ./output --dry-run
 ```
 
-**What it creates automatically:**
+**What it creates automatically (using SYNTHESIS.json):**
 - Nx workspace with NestJS preset
 - `gateway` app (main HTTP API)
 - Microservice app for each extracted submodule
@@ -322,6 +329,12 @@ One command creates the complete Nx workspace based on your analysis:
 - Contract libraries per microservice
 - TypeORM entities copied from analysis
 - Database configuration with environment variables
+- **Module scaffolding from SYNTHESIS.json:**
+  - Module directories for each recommended module
+  - Controllers with route hints from synthesis
+  - Services with table hints from synthesis
+  - app.module.ts imports all generated modules
+- **MIGRATION_ORDER.md** reference file in gateway
 - Required dependencies installed
 
 **Manual alternative (if needed):**
@@ -510,8 +523,8 @@ Phases:
   2: Route extraction (.htaccess, nginx, PHP)
   3: Database schema → TypeORM entities
   4: Submodule extraction → NestJS microservices (if submodules exist)
-  5: NestJS best practices research (BEFORE design)
-  6: System design guidance
+  5: Architectural Synthesis → SYNTHESIS.json (data-driven recommendations)
+  6: System design guidance (uses SYNTHESIS.json)
   7: Service generation guidance
   8: Testing guidance
 

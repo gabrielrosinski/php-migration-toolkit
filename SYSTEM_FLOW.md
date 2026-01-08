@@ -100,8 +100,15 @@ Reality:
 │  ├── Generates resilience configs (circuit breaker, retry)          │
 │  └── Creates LLM-optimized service_context.json                     │
 │                                                                      │
-│  Phase 5: NestJS Best Practices Research (BEFORE design)            │
-│  Phase 6: System Design guidance                                     │
+│  Phase 5: ARCHITECTURAL SYNTHESIS (KEY INTELLIGENCE LAYER)          │
+│  ├── Correlates routes → PHP files → database tables                │
+│  ├── Analyzes data coupling (which tables accessed together)        │
+│  ├── Computes service boundaries based on actual data access        │
+│  ├── Identifies security hotspots with remediation priority         │
+│  ├── Generates migration order based on dependencies + risk         │
+│  └── Produces data-driven architectural recommendations             │
+│                                                                      │
+│  Phase 6: System Design guidance (uses SYNTHESIS.json)              │
 │  Phases 7-8: Service generation & testing guidance                   │
 │                                                                      │
 │  Outputs:                                                            │
@@ -109,7 +116,9 @@ Reality:
 │  │   ├── legacy_analysis.json  (code + security)                    │
 │  │   ├── routes.json           (all routes)                         │
 │  │   ├── discovered_configs.json (auto-discovered files)            │
-│  │   └── extracted_services.json (submodule manifest)               │
+│  │   ├── extracted_services.json (submodule manifest)               │
+│  │   ├── SYNTHESIS.json        (data-driven recommendations) ← NEW  │
+│  │   └── SYNTHESIS.md          (human-readable summary) ← NEW       │
 │  ├── database/                                                       │
 │  │   ├── schema.json           (database schema)                    │
 │  │   └── entities/             (TypeORM entities)                   │
@@ -135,16 +144,23 @@ Reality:
 │      --completion-promise "DESIGN_COMPLETE" \                       │
 │      --max-iterations 40                                            │
 │                                                                      │
-│  Claude (as Architect) produces:                                     │
+│  Claude (as Architect) receives:                                     │
+│  └── SYNTHESIS.json (PRIMARY INPUT) with pre-computed:              │
+│      ├── Module recommendations with rationale                      │
+│      ├── Migration order based on dependencies + risk               │
+│      ├── Data coupling analysis for service boundaries              │
+│      └── Security hotspots with prioritization                      │
+│                                                                      │
+│  Claude validates/refines and produces:                              │
 │  └── ARCHITECTURE.md                                                │
 │      ├── Nx apps structure (gateway + services if needed)           │
 │      ├── Nx libs structure (shared-dto, database, common)           │
-│      ├── Data ownership per app                                     │
-│      ├── Communication patterns                                     │
+│      ├── Data ownership per app (from synthesis table_ownership)    │
+│      ├── Communication patterns (from synthesis data_couplings)     │
 │      ├── Authentication strategy (sessions → JWT)                   │
 │      ├── Global state → DI mapping                                  │
 │      ├── Data migration strategy                                    │
-│      └── Migration priority order                                   │
+│      └── Migration priority order (from synthesis migration_order)  │
 │                                                                      │
 │  Typical iterations: 15-30                                          │
 │                                                                      │
@@ -164,7 +180,7 @@ Reality:
 │                                                                      │
 │  $ ./scripts/create_nx_workspace.sh -o ./output                     │
 │                                                                      │
-│  This SINGLE COMMAND creates:                                        │
+│  This SINGLE COMMAND creates (using SYNTHESIS.json):                 │
 │  ├── Nx workspace with NestJS preset                                │
 │  ├── Gateway app (main HTTP API)                                    │
 │  ├── Microservice app for each extracted submodule                  │
@@ -172,6 +188,12 @@ Reality:
 │  ├── Contract libraries per microservice                            │
 │  ├── TypeORM entities copied from analysis                          │
 │  ├── Database configuration                                         │
+│  ├── MODULE SCAFFOLDING from SYNTHESIS.json:                        │
+│  │   ├── Module directories for each recommended module             │
+│  │   ├── Controllers with route hints from synthesis                │
+│  │   ├── Services with table hints from synthesis                   │
+│  │   └── app.module.ts imports all generated modules                │
+│  ├── MIGRATION_ORDER.md reference file in gateway                   │
 │  └── Required dependencies installed                                │
 │                                                                      │
 │  Options:                                                           │

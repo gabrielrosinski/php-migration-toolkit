@@ -307,3 +307,101 @@ Updated ALL 19 migration prompts + 1 template with standardized structure:
 3. Read tool commands include explicit offset/limit parameters
 4. Verification checklists reference specific step numbers
 5. Failure conditions stated upfront, not buried at end
+
+### TD-006: Architectural Synthesis - Data-Driven Service Boundaries
+
+**Date:** 2026-01-07
+**Context:** Analysis phase gathered 20+ JSON files but most data was unused by workspace generation
+
+**Problem:**
+The migration toolkit had a significant data generation-consumption gap:
+- Phase 0-4 gathered comprehensive data (routes, files, tables, security, call contracts, etc.)
+- `create_nx_workspace.sh` only used 2 fields: service names and transport type
+- 60% of gathered data was ignored during automated scaffolding
+- Architect (Claude) had to manually analyze all files to design service boundaries
+
+**Root Cause:**
+Missing "intelligent synthesis" layer between data gathering and architecture design. Data was collected but never:
+- Correlated (routes → files → tables)
+- Analyzed for patterns (data coupling, service boundaries)
+- Synthesized into recommendations
+
+**Solution - New Script:**
+Created `scripts/generate_architectural_synthesis.py` that:
+
+1. **Correlates Data:**
+   - Maps HTTP routes to PHP handler files
+   - Maps PHP files to database tables they access
+   - Identifies call points between modules
+
+2. **Analyzes Patterns:**
+   - Data coupling analysis (tight/moderate/loose based on table co-access)
+   - Security hotspot identification with severity scoring
+   - Complexity analysis per file/module
+
+3. **Computes Boundaries:**
+   - Recommends modules based on actual data access patterns (not keywords)
+   - Identifies natural service boundaries from table coupling
+   - Generates migration order based on dependencies + risk
+
+4. **Outputs:**
+   - `output/analysis/SYNTHESIS.json` - Machine-readable recommendations
+   - `output/analysis/SYNTHESIS.md` - Human-readable summary
+
+**Integration Points Updated:**
+
+| Component | Change |
+|-----------|--------|
+| `master_migration.sh` | Phase 5 now runs synthesis (was placeholder) |
+| `create_nx_workspace.sh` | Step 8 generates modules from SYNTHESIS.json |
+| `system_design_architect.md` | SYNTHESIS.json is PRIMARY input |
+| `CLAUDE.md` | Updated phase table, workflow, architecture |
+| `SYSTEM_FLOW.md` | Added Phase 5 details, updated Steps 2 and 2.5 |
+
+**SYNTHESIS.json Structure:**
+```json
+{
+  "summary": {
+    "total_modules": 12,
+    "total_routes": 45,
+    "security_issues": 28,
+    "estimated_total_effort": "medium (2-4 weeks)"
+  },
+  "module_recommendations": [
+    {
+      "name": "auth",
+      "rationale": "Handles 5 routes. Accesses users, sessions tables.",
+      "routes": ["GET /login", "POST /login", ...],
+      "tables": ["users", "sessions"],
+      "security_issues": 3,
+      "priority": 1,
+      "dependencies": [],
+      "migration_risk": "medium"
+    }
+  ],
+  "migration_order": [...],
+  "data_architecture": {
+    "table_ownership": {...},
+    "data_couplings": [...]
+  },
+  "security_analysis": {
+    "hotspots": [...],
+    "critical_files": [...]
+  },
+  "key_decisions": [...]
+}
+```
+
+**Benefits:**
+- Architect validates/refines pre-computed decisions instead of starting from scratch
+- Module boundaries based on actual data access, not keyword matching
+- Migration order considers dependencies and security risk
+- `create_nx_workspace.sh` generates informed scaffolding with route/table hints
+- Generated modules include comments referencing specific SYNTHESIS.json data
+
+**New Workflow:**
+```
+GATHER (Phases 0-4) → SYNTHESIZE (Phase 5) → VALIDATE (Phase 6) → IMPLEMENT
+```
+
+Where Phase 5 (NEW) transforms raw data into actionable architecture recommendations

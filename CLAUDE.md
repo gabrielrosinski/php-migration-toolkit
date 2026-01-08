@@ -70,6 +70,11 @@ python scripts/generate_schema_summary.py output/database/schema_inferred.json \
   --all-modules
 # Generates: schema_summary.json (18KB vs 143KB original)
 #            output/database/modules/schema_<module>.json for each module
+
+# Generate architectural synthesis (correlates routes→files→tables, computes boundaries)
+python scripts/generate_architectural_synthesis.py -o ./output
+# Generates: SYNTHESIS.json (data-driven recommendations)
+#            SYNTHESIS.md (human-readable summary)
 ```
 
 ### AI-Assisted Design & Documentation (Single Prompts)
@@ -266,6 +271,7 @@ migration-toolkit/
 │   ├── extract_routes.py       # Multi-source route extraction
 │   ├── extract_database.py     # SQL → TypeORM entity generation
 │   ├── generate_architecture_context.py  # Comprehensive LLM-optimized context
+│   ├── generate_architectural_synthesis.py  # Correlates data, computes service boundaries
 │   ├── chunk_legacy_php.sh     # Large file splitting at logical boundaries
 │   ├── generate_chunk_jobs.py  # Creates migration jobs from chunks
 │   ├── run_migration_jobs.sh   # Runs jobs in separate Claude sessions
@@ -322,7 +328,7 @@ my-project/
 ./scripts/master_migration.sh /path/to/php-project -o ./output
 ```
 
-This single command runs **8 automated phases**:
+This single command runs **9 automated phases**:
 | Phase | Description |
 |-------|-------------|
 | 0 | Environment check + auto-discovery (configs, submodules) |
@@ -330,10 +336,14 @@ This single command runs **8 automated phases**:
 | 2 | Route extraction from .htaccess/nginx/PHP |
 | 3 | Database schema → TypeORM entities |
 | **4** | **Submodule extraction → NestJS microservices** (automatic if submodules exist) |
-| 5 | *(Integrated into Phase 6)* |
-| 6 | System design guidance |
+| **5** | **Architectural Synthesis** - Correlates routes→files→tables, computes service boundaries |
+| 6 | System design guidance (uses SYNTHESIS.json) |
 | 7 | Service generation guidance |
 | 8 | Testing guidance |
+
+**Phase 5 outputs (Architectural Synthesis):**
+- `output/analysis/SYNTHESIS.json` - Data-driven module recommendations, migration order, security hotspots
+- `output/analysis/SYNTHESIS.md` - Human-readable summary
 
 **Phase 1 outputs for large files (>400 lines):**
 - `output/analysis/chunks/{file}/` - Logical chunks with manifests
@@ -348,9 +358,11 @@ This single command runs **8 automated phases**:
 "/Users/user/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/ab2b6d0cad88/scripts/setup-ralph-loop.sh" "YOUR PROMPT TEXT" --completion-promise "DESIGN_COMPLETE" --max-iterations 50
 ```
 This step automatically:
-1. **Researches NestJS best practices** using Context7 (creates `NESTJS_BEST_PRACTICES.md`)
-2. **Designs Nx monorepo architecture** (creates `ARCHITECTURE.md`)
-- Reads analysis output including extracted services
+1. **Reads SYNTHESIS.json** - Primary input with data-driven recommendations
+2. **Researches NestJS best practices** using Context7 (creates `NESTJS_BEST_PRACTICES.md`)
+3. **Validates and refines** the synthesis recommendations (creates `ARCHITECTURE.md`)
+- Uses pre-computed module boundaries from SYNTHESIS.json
+- Uses pre-computed migration order from SYNTHESIS.json
 - **Extracted submodules are automatically included as microservice apps**
 
 ### Step 3: Create Nx Workspace (Automated - Single Command)
@@ -370,6 +382,8 @@ This automatically:
 - Creates contract libraries per microservice
 - Copies TypeORM entities from analysis
 - Sets up database configuration
+- **Generates module scaffolding from SYNTHESIS.json** (module directories, controllers, services)
+- Creates `MIGRATION_ORDER.md` reference file in gateway
 - Installs required dependencies
 
 ### Step 4: Migrate Services

@@ -32,6 +32,7 @@ import json
 import argparse
 import os
 import re
+import sys
 from collections import defaultdict
 from typing import Dict, List, Any, Optional
 
@@ -694,7 +695,10 @@ def generate_architecture_context(
             "globals_map": analysis.get('globals_map', {}),
             "singletons": analysis.get('singletons', []),
             "static_dependencies": analysis.get('static_dependencies', [])
-        }
+        },
+
+        # Architecture patterns (NEW - critical for NestJS design decisions)
+        "architecture_patterns": analysis.get('architecture_patterns', {})
     }
 
     # Load FULL database schema with all tables and columns
@@ -804,7 +808,7 @@ def main():
         output_dir = os.path.dirname(args.output)
         os.makedirs(output_dir, exist_ok=True)
 
-        # File 1: Core context (entry points, project, services, config, globals, large_files)
+        # File 1: Core context (entry points, project, services, config, globals, large_files, architecture_patterns)
         core_context = {
             "_meta": context.get("_meta", {}),
             "project": context.get("project", {}),
@@ -814,6 +818,7 @@ def main():
             "globals": context.get("globals", {}),
             "dependencies": context.get("dependencies", {}),
             "large_files": context.get("large_files", {}),
+            "architecture_patterns": context.get("architecture_patterns", {}),
         }
         core_path = os.path.join(output_dir, "architecture_context.json")
         with open(core_path, 'w', encoding='utf-8') as f:
@@ -879,6 +884,7 @@ def main():
         routes_data = context.get('routes', {})
         db_schema = context.get('database_schema', {})
         deps_data = context.get('dependencies', {})
+        arch_patterns = context.get('architecture_patterns', {})
 
         print(f"\n{'='*60}")
         print(f"COMPACT Architecture Context (single file)")
@@ -893,6 +899,35 @@ def main():
         print(f"  Database tables:   {db_schema.get('table_count', 0)}")
         print(f"  Total columns:     {db_schema.get('total_columns', 0)}")
         print(f"  Key dependencies:  {len(deps_data.get('key_files', []))}")
+
+        # Architecture patterns summary
+        if arch_patterns:
+            print(f"\n  --- Architecture Patterns ---")
+            trans = arch_patterns.get('transactions', {})
+            if trans.get('files_with_transactions'):
+                print(f"  Transactions:      {trans.get('files_with_transactions')} files, locks: {trans.get('lock_types', [])}")
+            async_ev = arch_patterns.get('async_events', {})
+            if async_ev.get('files_with_async'):
+                print(f"  Async/Events:      {async_ev.get('files_with_async')} files, queues: {async_ev.get('has_queues')}, events: {async_ev.get('has_events')}")
+            err = arch_patterns.get('error_handling', {})
+            if err.get('http_status_codes'):
+                print(f"  HTTP Codes:        {err.get('http_status_codes')}")
+            pag = arch_patterns.get('pagination', {})
+            if pag.get('files_with_pagination'):
+                print(f"  Pagination:        {pag.get('files_with_pagination')} files, types: {pag.get('pagination_types', [])}")
+            cache = arch_patterns.get('caching', {})
+            if cache.get('files_with_caching'):
+                print(f"  Caching:           {cache.get('files_with_caching')} files, types: {cache.get('cache_types', [])}")
+            auth = arch_patterns.get('authentication', {})
+            if auth.get('auth_types'):
+                print(f"  Auth:              {auth.get('auth_types')}, roles: {auth.get('roles_found', [])}")
+            res = arch_patterns.get('resilience', {})
+            if res.get('files_with_resilience'):
+                print(f"  Resilience:        {res.get('files_with_resilience')} files, retries: {res.get('has_retries')}, timeouts: {res.get('has_timeouts')}")
+            log = arch_patterns.get('logging', {})
+            if log.get('files_with_logging'):
+                print(f"  Logging:           {log.get('files_with_logging')} files, levels: {log.get('log_levels_used', [])}")
+
         print(f"{'='*60}")
 
     return 0
